@@ -76,6 +76,10 @@ pipeline {
           test -f backend/requirements.txt || { echo "ERROR: backend/requirements.txt missing"; exit 1; }
           test -f backend/scripts/jenkins_smoke.py || { echo "ERROR: jenkins_smoke.py missing"; exit 1; }
           test -f scripts/normalize_deploy_env.py || { echo "ERROR: normalize_deploy_env.py missing"; exit 1; }
+          echo "=== frontend ==="
+          ls -la frontend || true
+          test -f frontend/package.json || { echo "ERROR: frontend/package.json missing — frontend source was not in git"; exit 1; }
+          test -f frontend/package-lock.json || { echo "ERROR: frontend/package-lock.json missing"; exit 1; }
         '''
       }
     }
