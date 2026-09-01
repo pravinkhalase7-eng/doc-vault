@@ -1,0 +1,382 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.service import get_current_user
+from app.collections.service import (
+    assert_valid_parent,
+    assign_to_default_if_unfiled,
+    delete_owned_collection,
+    descendants_of,
+    document_ids_for_collections,
+    file_unfiled_into_default,
+    is_default_collection,
+    owned_collection,
+    serialize_collection,
+    serialize_tree_file,
+)
+from app.database import get_db
+from app.documents.service import ensure_quota, get_document_for_user
+from app.models.collection import Collection, CollectionDocument, Reminder, Task
+from app.models.document import Document
+from app.models.enums import DocumentStatus, TaskStatus
+from app.models.user import User
+from app.schemas.common import CollectionCreate, CollectionUpdate, ReminderCreate, TaskCreate
+from datetime import UTC, datetime, timedelta
+
+router = APIRouter(tags=["workspace"])
+
+
+def ok(data):
+    return {"success": True, "data": data}
+
+
+PROCESSING_STATUSES = {
+    DocumentStatus.UPLOADING,
+    DocumentStatus.PROCESSING,
+    DocumentStatus.OCR_PROCESSING,
+    DocumentStatus.AI_PROCESSING,
+}
+READY_STATUSES = {
+    DocumentStatus.READY,
+    DocumentStatus.UPLOADED,
+}
+
+
+def _status_value(status) -> str:
+    return status.value if hasattr(status, "value") else str(status)
+
+
+@router.get("/dashboard")
+async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    usage = await ensure_quota(db, user.id, 0)
+    await file_unfiled_into_default(db, user.id)
+    await db.commit()
+
+    file_rows = (
+        await db.scalars(
+            select(Document)
+            .where(
+                Document.user_id == user.id,
+                Document.deleted_at.is_(None),
+                Document.trashed_at.is_(None),
+            )
+            .order_by(Document.created_at.desc())
+        )
+    ).all()
+    ready = processing = failed = 0
+    images = pdfs = other = 0
+    downloads = shares = 0
+    processing_values = {item.value for item in PROCESSING_STATUSES}
+    ready_values = {item.value for item in READY_STATUSES}
+    for doc in file_rows:
+        value = _status_value(doc.status)
+        if value in ready_values:
+            ready += 1
+        elif value in processing_values:
+            processing += 1
+        else:
+            failed += 1
+        mime = (doc.mime_type or "").lower()
+        name = (doc.original_filename or "").lower()
+        if mime.startswith("image/") or name.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic")):
+            images += 1
+        elif "pdf" in mime or name.endswith(".pdf"):
+            pdfs += 1
+        else:
+            other += 1
+        downloads += getattr(doc, "download_count", 0) or 0
+        shares += getattr(doc, "share_count", 0) or 0
+    total = len(file_rows)
+
+    cols = (
+        await db.scalars(select(Collection).where(Collection.user_id == user.id).order_by(Collection.name))
+    ).all()
+    parents = {col.id: col.parent_id for col in cols}
+    docs_by_col = await document_ids_for_collections(db, [col.id for col in cols])
+    filed: set[str] = set()
+    folders = []
+    for col in cols:
+        ids = set(docs_by_col.get(col.id, []))
+        filed.update(ids)
+        if col.parent_id:
+            continue
+        folders.append(
+            {
+                "id": col.id,
+                "name": col.name,
+                "file_count": len(ids),
+                "child_count": len(descendants_of(col.id, parents)),
+            }
+        )
+    folders.sort(key=lambda item: (-item["file_count"], item["name"].lower()))
+    unfiled = sum(1 for doc in file_rows if str(doc.id) not in filed)
+    recent = [
+        {
+            "id": doc.id,
+            "title": doc.title,
+            "original_filename": doc.original_filename,
+            "mime_type": doc.mime_type,
+            "size_bytes": doc.size_bytes,
+            "created_at": doc.created_at,
+        }
+        for doc in file_rows[:5]
+    ]
+
+    quota = usage.quota_bytes or 104_857_600
+    used = sum(int(doc.size_bytes or 0) for doc in file_rows)
+    if (usage.used_bytes or 0) != used or (usage.file_count or 0) != total:
+        usage.used_bytes = used
+        usage.file_count = total
+        await db.commit()
+    used_percent = min(100.0, (used * 100 / quota) if quota else 0)
+    return ok(
+        {
+            "storage": {
+                "used_bytes": used,
+                "quota_bytes": quota,
+                "available_bytes": max(0, quota - used),
+                "used_percent": round(used_percent, 2),
+                "file_count": usage.file_count or total,
+            },
+            "documents": {
+                "total": total,
+                "ready": ready,
+                "processing": processing,
+                "failed": failed,
+                "images": images,
+                "pdfs": pdfs,
+                "other": other,
+                "unfiled": unfiled,
+            },
+            "activity": {"downloads": downloads, "shares": shares},
+            "recent": recent,
+            "collections": {
+                "total": len(cols),
+                "folders": folders,
+            },
+        }
+    )
+
+
+@router.get("/collections")
+async def list_collections(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await file_unfiled_into_default(db, user.id)
+    await db.commit()
+    rows = (
+        await db.scalars(select(Collection).where(Collection.user_id == user.id).order_by(Collection.name))
+    ).all()
+    rows = sorted(rows, key=lambda col: (not is_default_collection(col), (col.name or "").lower()))
+    docs_by_col = await document_ids_for_collections(db, [col.id for col in rows])
+    return ok([serialize_collection(col, docs_by_col.get(col.id, [])) for col in rows])
+
+
+@router.post("/collections")
+async def create_collection(
+    payload: CollectionCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    await assert_valid_parent(db, user.id, None, payload.parent_id)
+    col = Collection(
+        user_id=user.id,
+        name=payload.name.strip(),
+        description=payload.description,
+        parent_id=payload.parent_id,
+        ai_context=payload.ai_context,
+        extra=payload.metadata or {},
+        goal_key=payload.goal_key,
+    )
+    db.add(col)
+    await db.flush()
+    for doc_id in payload.document_ids:
+        await get_document_for_user(db, user.id, doc_id)
+        db.add(CollectionDocument(collection_id=col.id, document_id=doc_id))
+    await db.commit()
+    await db.refresh(col)
+    return ok(serialize_collection(col, payload.document_ids))
+
+
+@router.patch("/collections/{collection_id}")
+async def update_collection(
+    collection_id: str,
+    payload: CollectionUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    col = await owned_collection(db, user.id, collection_id)
+    data = payload.model_dump(exclude_unset=True)
+    if "parent_id" in data:
+        parent_id = data["parent_id"]
+        if parent_id == collection_id:
+            from app.exceptions import AppError
+
+            raise AppError("COLLECTION_CYCLE", "A collection cannot be nested under itself", 400)
+        await assert_valid_parent(db, user.id, collection_id, parent_id)
+        col.parent_id = parent_id
+    if "name" in data and data["name"]:
+        col.name = data["name"].strip()
+    if "description" in data:
+        col.description = data["description"]
+    if "ai_context" in data:
+        col.ai_context = data["ai_context"]
+    if "metadata" in data:
+        col.extra = data["metadata"] or {}
+    if "goal_key" in data:
+        col.goal_key = data["goal_key"]
+    await db.commit()
+    docs = await document_ids_for_collections(db, [col.id])
+    return ok(serialize_collection(col, docs.get(col.id, [])))
+
+
+@router.delete("/collections/{collection_id}")
+async def delete_collection(
+    collection_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    await delete_owned_collection(db, user.id, collection_id)
+    await db.commit()
+    return ok({"deleted": True, "id": collection_id})
+
+
+@router.get("/collections/{collection_id}/files")
+async def collection_files(
+    collection_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    await owned_collection(db, user.id, collection_id)
+    docs_by_col = await document_ids_for_collections(db, [collection_id])
+    ids = docs_by_col.get(collection_id, [])
+    if not ids:
+        return ok([])
+    rows = (
+        await db.scalars(
+            select(Document).where(
+                Document.id.in_(ids),
+                Document.user_id == user.id,
+                Document.deleted_at.is_(None),
+                Document.trashed_at.is_(None),
+            )
+        )
+    ).all()
+    order = {doc_id: index for index, doc_id in enumerate(ids)}
+    rows = sorted(rows, key=lambda doc: order.get(doc.id, 99))
+    return ok([serialize_tree_file(doc) for doc in rows])
+
+
+@router.post("/collections/{collection_id}/documents/{document_id}")
+async def add_to_collection(
+    collection_id: str,
+    document_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await owned_collection(db, user.id, collection_id)
+    await get_document_for_user(db, user.id, document_id)
+    existing = await db.scalar(
+        select(CollectionDocument).where(
+            CollectionDocument.collection_id == collection_id,
+            CollectionDocument.document_id == document_id,
+        )
+    )
+    if not existing:
+        db.add(CollectionDocument(collection_id=collection_id, document_id=document_id))
+        await db.commit()
+    return ok({"added": True})
+
+
+@router.delete("/collections/{collection_id}/documents/{document_id}")
+async def remove_from_collection(
+    collection_id: str,
+    document_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await owned_collection(db, user.id, collection_id)
+    await db.execute(
+        delete(CollectionDocument).where(
+            CollectionDocument.collection_id == collection_id,
+            CollectionDocument.document_id == document_id,
+        )
+    )
+    await assign_to_default_if_unfiled(db, user.id, document_id)
+    await db.commit()
+    return ok({"removed": True})
+
+
+@router.get("/reminders")
+async def list_reminders(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    rows = (await db.scalars(select(Reminder).where(Reminder.user_id == user.id))).all()
+    return ok(
+        [
+            {
+                "id": r.id,
+                "title": r.title,
+                "document_id": r.document_id,
+                "offset_days": r.offset_days,
+                "fire_at": r.fire_at,
+                "sent_at": r.sent_at,
+            }
+            for r in rows
+        ]
+    )
+
+
+@router.post("/reminders")
+async def create_reminder(
+    payload: ReminderCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    fire_at = payload.fire_at or datetime.now(UTC) + timedelta(days=payload.offset_days)
+    reminder = Reminder(
+        user_id=user.id,
+        document_id=payload.document_id,
+        collection_id=payload.collection_id,
+        title=payload.title,
+        offset_days=payload.offset_days,
+        fire_at=fire_at,
+    )
+    db.add(reminder)
+    await db.commit()
+    await db.refresh(reminder)
+    return ok({"id": reminder.id, "fire_at": reminder.fire_at})
+
+
+@router.get("/tasks")
+async def list_tasks(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    rows = (await db.scalars(select(Task).where(Task.user_id == user.id))).all()
+    return ok(
+        [
+            {
+                "id": t.id,
+                "title": t.title,
+                "description": t.description,
+                "status": t.status.value,
+                "due_at": t.due_at,
+                "completed_at": t.completed_at,
+            }
+            for t in rows
+        ]
+    )
+
+
+@router.post("/tasks")
+async def create_task(payload: TaskCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    task = Task(
+        user_id=user.id,
+        title=payload.title,
+        description=payload.description,
+        collection_id=payload.collection_id,
+        document_id=payload.document_id,
+        due_at=payload.due_at,
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+    return ok({"id": task.id, "title": task.title, "status": task.status.value})
+
+
+@router.post("/tasks/{task_id}/complete")
+async def complete_task(task_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    task = await db.get(Task, task_id)
+    if not task or task.user_id != user.id:
+        return ok({"completed": False})
+    task.status = TaskStatus.COMPLETED
+    task.completed_at = datetime.now(UTC)
+    await db.commit()
+    return ok({"completed": True})

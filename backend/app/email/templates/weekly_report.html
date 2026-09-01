@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<html><body style="font-family:Georgia,serif;background:#f6f3ee;padding:24px;">
+  <div style="max-width:560px;margin:auto;background:#fff;border-radius:16px;padding:28px;">
+    <h1>Weekly document health</h1>
+    <p>Score: {{ health.score }}/100</p>
+    <ul>{% for note in health.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+  </div>
+</body></html>
