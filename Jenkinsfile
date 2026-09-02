@@ -391,7 +391,7 @@ Then rebuild.''')
     success {
       echo "DocVault ${params.DEPLOY_ENV} build #${env.BUILD_NUMBER} succeeded"
       echo "UI (Nginx): host port WEB_HOST_PORT (default 80)"
-      echo "API: host port API_HOST_PORT (default 8000); /docs is off when APP_ENV=production"
+      echo "API is reached via Nginx /api; Postgres and Redis stay on the Docker network"
     }
     failure {
       echo "DocVault build #${env.BUILD_NUMBER} failed — check stage logs"
