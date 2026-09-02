@@ -26,5 +26,8 @@ export function newId(): string {
 
 export function installUuidPolyfill(): void {
   if (typeof crypto === "undefined" || typeof crypto.randomUUID === "function") return;
-  crypto.randomUUID = () => uuidFromBytes(randomBytes(16));
+  Object.defineProperty(crypto, "randomUUID", {
+    configurable: true,
+    value: () => uuidFromBytes(randomBytes(16)),
+  });
 }
