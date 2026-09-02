@@ -85,6 +85,7 @@ class PreferenceOut(APIModel):
     notification_email: bool
     notification_in_app: bool
     timezone: str
+    phone_number: str | None = None
 
 
 class PreferenceUpdate(APIModel):
@@ -101,6 +102,7 @@ class PreferenceUpdate(APIModel):
     notification_email: bool | None = None
     notification_in_app: bool | None = None
     timezone: str | None = None
+    phone_number: str | None = None
     onboarding_completed: bool | None = None
 
 

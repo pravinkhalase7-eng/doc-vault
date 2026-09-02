@@ -20,6 +20,7 @@ export type Preferences = {
   notification_email: boolean;
   notification_in_app: boolean;
   timezone: string;
+  phone_number?: string | null;
 };
 
 export type User = {

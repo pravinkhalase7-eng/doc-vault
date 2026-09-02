@@ -149,10 +149,10 @@ type Pending =
 
 const suggestions = [
   "Show me all collections",
+  "Remind me tomorrow at 10am to renew my passport",
+  "Doctor appointment Friday at 4pm, call me 1 hour before",
   "When does my car insurance expire?",
   "Which documents are expiring this month?",
-  "Do I have all documents required for passport renewal?",
-  "Show documents related to my house.",
 ];
 
 function isImageMime(mime?: string, name?: string) {

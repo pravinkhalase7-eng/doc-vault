@@ -50,6 +50,7 @@ class UserPreference(BaseModel):
     notification_email: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notification_in_app: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Kolkata")
+    phone_number: Mapped[str | None] = mapped_column(String(32))
 
     user: Mapped[User] = relationship(back_populates="preferences")
 

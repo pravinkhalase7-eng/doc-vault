@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     rate_limit_upload: str = "30/minute"
     rate_limit_ai: str = "20/minute"
 
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_phone_number: str = ""
+
     @field_validator("gemini_api_key", mode="before")
     @classmethod
     def empty_key(cls, value: str | None) -> str:
@@ -92,6 +96,10 @@ class Settings(BaseSettings):
     @property
     def gemini_configured(self) -> bool:
         return bool(self.gemini_api_key)
+
+    @property
+    def twilio_configured(self) -> bool:
+        return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_phone_number)
 
 
 @lru_cache

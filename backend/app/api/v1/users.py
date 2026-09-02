@@ -3,10 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.service import get_current_user
 from app.database import get_db
+from app.exceptions import AppError
 from app.models.enums import AIPrivacyMode, LanguageCode
 from app.models.user import User
 from app.schemas.common import OnboardingRequest, PreferenceUpdate
 from app.services.health_score import compute_health
+from app.utils.phone import normalize_phone
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -42,6 +44,7 @@ async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(
                 "notification_email": bool(prefs and prefs.notification_email),
                 "notification_in_app": bool(prefs and prefs.notification_in_app),
                 "timezone": prefs.timezone if prefs else "Asia/Kolkata",
+                "phone_number": prefs.phone_number if prefs else None,
             },
             "health": health,
         }
@@ -55,6 +58,15 @@ async def update_prefs(
     prefs = user.preferences
     data = payload.model_dump(exclude_none=True)
     onboarding = data.pop("onboarding_completed", None)
+    if "phone_number" in data:
+        raw = data.pop("phone_number")
+        if raw == "":
+            data["phone_number"] = None
+        else:
+            phone = normalize_phone(raw)
+            if not phone:
+                raise AppError("INVALID_PHONE", "Enter a valid Indian mobile, e.g. 98765 43210.", 400)
+            data["phone_number"] = phone
     for key, value in data.items():
         if hasattr(prefs, key):
             setattr(prefs, key, value)

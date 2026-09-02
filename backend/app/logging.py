@@ -23,6 +23,8 @@ _SECRET_KEYS = {
     "jwt_secret",
     "encryption_key",
     "gemini_api_key",
+    "twilio_auth_token",
+    "twilio_account_sid",
 }
 
 _REDACT = re.compile(r"(password|token|secret|api[_-]?key)\s*[:=]\s*\S+", re.I)

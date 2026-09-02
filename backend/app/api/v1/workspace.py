@@ -21,6 +21,7 @@ from app.models.collection import Collection, CollectionDocument, Reminder, Task
 from app.models.document import Document
 from app.models.enums import DocumentStatus, TaskStatus
 from app.models.user import User
+from app.reminders.service import reminder_view
 from app.schemas.common import CollectionCreate, CollectionUpdate, ReminderCreate, TaskCreate
 from datetime import UTC, datetime, timedelta
 
@@ -319,19 +320,7 @@ async def remove_from_collection(
 @router.get("/reminders")
 async def list_reminders(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     rows = (await db.scalars(select(Reminder).where(Reminder.user_id == user.id))).all()
-    return ok(
-        [
-            {
-                "id": r.id,
-                "title": r.title,
-                "document_id": r.document_id,
-                "offset_days": r.offset_days,
-                "fire_at": r.fire_at,
-                "sent_at": r.sent_at,
-            }
-            for r in rows
-        ]
-    )
+    return ok([reminder_view(r) for r in rows])
 
 
 @router.post("/reminders")

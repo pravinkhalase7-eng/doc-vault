@@ -12,6 +12,7 @@ from app.ai.context_builder import build_context
 from app.ai.evidence_checker import validate_answer
 from app.ai.privacy_gateway import check_ai_request
 from app.ai.router import get_router
+from app.ai.schedule_actions import handle_schedule_action
 from app.ai.vault_actions import handle_vault_action
 from app.collections.service import collection_tree, collections_for_documents, matching_collections
 from app.config import get_settings
@@ -31,6 +32,7 @@ ROOT_INSTRUCTION = """
 You are DocVaultAgent, a private personal document assistant.
 Never invent document facts. If evidence is missing, say you could not find it.
 Use tools. Cite document title and page. Do not request raw files.
+If the user wants a reminder, appointment, or a phone call at a time, schedule it and call them with Twilio when it is due.
 Destructive actions (delete, share, send) require user confirmation.
 If the user wants to delete a collection, ask which collection, then confirm before deleting.
 If the user wants to delete a file or document, ask for the saved file name, then confirm.
@@ -84,7 +86,9 @@ async def run_vault_agent(
     docs: list[Document] = []
     evidence: list[dict] = []
     proposal = None
-    handled = await handle_vault_action(db, user, message, conversation.id)
+    handled = await handle_schedule_action(db, user, message, conversation.id)
+    if not handled:
+        handled = await handle_vault_action(db, user, message, conversation.id)
     if handled:
         answer = handled["answer"]
         proposal = handled.get("proposal")

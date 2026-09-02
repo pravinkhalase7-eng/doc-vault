@@ -8,8 +8,10 @@ from app.database import SessionLocal
 from app.documents.processing import process_document
 from app.email.digest_service import send_daily_briefings, send_weekly_reports
 from app.email.notification_service import notify
+from app.models.collection import Reminder
 from app.models.document import Document
 from app.models.user import User
+from app.reminders.service import deliver_reminder_call, due_call_reminders
 from app.workers.celery_app import celery_app
 
 settings = get_settings()
@@ -94,3 +96,30 @@ def purge_trash() -> None:
                 await permanently_delete(db, doc.user_id, doc.id)
 
     asyncio.run(_inner())
+
+
+@celery_app.task(name="app.workers.tasks.fire_reminder_call")
+def fire_reminder_call(reminder_id: str) -> str:
+    async def _inner() -> str:
+        async with SessionLocal() as db:
+            reminder = await db.get(Reminder, reminder_id)
+            if not reminder:
+                return "missing"
+            status = await deliver_reminder_call(db, reminder)
+            await db.commit()
+            return status
+
+    return asyncio.run(_inner())
+
+
+@celery_app.task(name="app.workers.tasks.fire_due_reminder_calls")
+def fire_due_reminder_calls() -> int:
+    async def _inner() -> int:
+        async with SessionLocal() as db:
+            rows = await due_call_reminders(db)
+            for reminder in rows:
+                await deliver_reminder_call(db, reminder)
+            await db.commit()
+            return len(rows)
+
+    return asyncio.run(_inner())

@@ -24,5 +24,6 @@ celery_app.conf.update(
         "daily-briefing": {"task": "app.workers.tasks.daily_briefing", "schedule": crontab(hour=6, minute=0)},
         "weekly-report": {"task": "app.workers.tasks.weekly_report", "schedule": crontab(hour=7, minute=0, day_of_week=1)},
         "purge-trash": {"task": "app.workers.tasks.purge_trash", "schedule": crontab(hour=3, minute=30)},
+        "due-reminder-calls": {"task": "app.workers.tasks.fire_due_reminder_calls", "schedule": 60.0},
     },
 )
