@@ -45,6 +45,7 @@ async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(
                 "notification_in_app": bool(prefs and prefs.notification_in_app),
                 "timezone": prefs.timezone if prefs else "Asia/Kolkata",
                 "phone_number": prefs.phone_number if prefs else None,
+                "notification_push": bool(prefs.notification_push) if prefs else False,
             },
             "health": health,
         }

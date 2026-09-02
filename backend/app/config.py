@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_mailto: str = "mailto:docvault@localhost"
 
     @field_validator("gemini_api_key", mode="before")
     @classmethod
@@ -100,6 +103,10 @@ class Settings(BaseSettings):
     @property
     def twilio_configured(self) -> bool:
         return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_phone_number)
+
+    @property
+    def vapid_configured(self) -> bool:
+        return bool(self.vapid_private_key and self.vapid_public_key)
 
 
 @lru_cache

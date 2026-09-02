@@ -1,4 +1,4 @@
-const CACHE = "docvault-shell-v3";
+const CACHE = "docvault-shell-v4";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -11,6 +11,39 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener("push", (event) => {
+  let data = { title: "DocVault", body: "You have a reminder.", url: "/notifications" };
+  try {
+    if (event.data) data = { ...data, ...event.data.json() };
+  } catch {
+    if (event.data) data.body = event.data.text();
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "DocVault", {
+      body: data.body || "You have a reminder.",
+      icon: "/icon.svg",
+      badge: "/icon.svg",
+      data: { url: data.url || "/notifications" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/notifications";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client) {
+          client.navigate?.(url);
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    }),
   );
 });
 

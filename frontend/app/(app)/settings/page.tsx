@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { disablePush, enablePush, pushSupported } from "@/lib/push";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -114,6 +115,58 @@ function PhoneCallForm() {
   );
 }
 
+function PushAlertsForm() {
+  const { user, load } = useAuth();
+  const [saving, setSaving] = useState(false);
+  const [secure, setSecure] = useState(false);
+  const [supported, setSupported] = useState(false);
+  const enabled = Boolean(user?.preferences?.notification_push);
+
+  useEffect(() => {
+    setSecure(window.isSecureContext);
+    setSupported(pushSupported());
+  }, []);
+
+  async function toggle(on: boolean) {
+    setSaving(true);
+    try {
+      if (on) {
+        await enablePush();
+        toast.success("Reminder alerts are on");
+      } else {
+        await disablePush();
+        toast.success("Reminder alerts are off");
+      }
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update alerts");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-2xl bg-card px-4 py-4">
+      <div className="flex items-center gap-3">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-white">
+          <Bell className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px]">Reminder alerts</p>
+          <p className="text-xs text-muted-foreground">
+            {supported
+              ? "Lock-screen notification when a reminder is due"
+              : secure
+                ? "This browser does not support web push"
+                : "Needs HTTPS (or localhost). You’ll still see alerts in Notifications."}
+          </p>
+        </div>
+        <Switch checked={enabled && supported} disabled={saving || !supported} onCheckedChange={toggle} />
+      </div>
+    </div>
+  );
+}
+
 function Group({ children }: { children: React.ReactNode }) {
   return <div className="overflow-hidden rounded-2xl bg-card">{children}</div>;
 }
@@ -151,6 +204,8 @@ export default function SettingsPage() {
       </Group>
 
       <PhoneCallForm />
+
+      <PushAlertsForm />
 
       <Group>
         <Row href="/ai" icon={MessageSquare} tone="bg-primary" label="Chats" hint="Ask My Vault" />

@@ -8,10 +8,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy.orm import selectinload
+
 from app.config import get_settings
 from app.logging import get_logger
 from app.models.collection import Reminder
 from app.models.user import User
+from app.push.service import alert_reminder
 from app.reminders.speech import reminder_speech
 from app.utils.datetime_parse import format_local, now_utc
 from app.utils.phone import mask_phone, normalize_phone
@@ -154,7 +157,7 @@ async def due_call_reminders(db: AsyncSession, *, now: datetime | None = None) -
     due = []
     for row in rows:
         extra = row.extra or {}
-        if extra.get("cancelled") or extra.get("needs_phone"):
+        if extra.get("cancelled"):
             continue
         due.append(row)
     return due
@@ -166,9 +169,22 @@ async def deliver_reminder_call(db: AsyncSession, reminder: Reminder) -> str:
         return "cancelled"
     if reminder.sent_at:
         return "already_sent"
+    user = (
+        await db.scalars(select(User).options(selectinload(User.preferences)).where(User.id == reminder.user_id))
+    ).first()
+    if user and not extra.get("alerted"):
+        when = extra.get("when_label") or format_local(reminder.fire_at, extra.get("timezone") or "Asia/Kolkata")
+        await alert_reminder(
+            db,
+            user,
+            title="DocVault reminder",
+            body=f"{reminder.title} — {when}",
+        )
+        extra["alerted"] = True
+        reminder.extra = extra
     phone = extra.get("phone_number")
-    if not phone:
-        extra["call_error"] = "No phone number on file"
+    if not phone or extra.get("needs_phone"):
+        extra["call_error"] = extra.get("call_error") or "No phone number on file"
         reminder.extra = extra
         reminder.sent_at = now_utc()
         return "no_phone"

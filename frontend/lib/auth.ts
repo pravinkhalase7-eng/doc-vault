@@ -21,6 +21,7 @@ export type Preferences = {
   notification_in_app: boolean;
   timezone: string;
   phone_number?: string | null;
+  notification_push?: boolean;
 };
 
 export type User = {

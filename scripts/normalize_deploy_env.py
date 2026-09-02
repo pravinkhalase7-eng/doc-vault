@@ -8,7 +8,14 @@ import os
 import re
 from pathlib import Path
 
-TWILIO_KEYS = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER")
+TWILIO_KEYS = (
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "TWILIO_PHONE_NUMBER",
+    "VAPID_PUBLIC_KEY",
+    "VAPID_PRIVATE_KEY",
+    "VAPID_MAILTO",
+)
 
 
 def upsert(text: str, key: str, value: str) -> str:
