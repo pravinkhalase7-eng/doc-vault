@@ -68,7 +68,7 @@ type Filter = "all" | "liked" | "saved";
 function isImage(doc: ReelDoc) {
   return (
     (doc.mime_type || "").startsWith("image/") ||
-    /\.(png|jpe?g|gif|webp|heic|bmp)$/i.test(doc.original_filename || "")
+    /\.(png|jpe?g|gif|webp|heic|heif|bmp|tiff?|avif)$/i.test(doc.original_filename || "")
   );
 }
 

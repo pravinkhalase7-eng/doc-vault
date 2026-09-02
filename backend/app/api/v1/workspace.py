@@ -79,7 +79,9 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
             failed += 1
         mime = (doc.mime_type or "").lower()
         name = (doc.original_filename or "").lower()
-        if mime.startswith("image/") or name.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic")):
+        if mime.startswith("image/") or name.endswith(
+            (".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".heif", ".bmp", ".tif", ".tiff", ".avif")
+        ):
             images += 1
         elif "pdf" in mime or name.endswith(".pdf"):
             pdfs += 1

@@ -13,37 +13,48 @@ from app.exceptions import AppError
 
 settings = get_settings()
 
-ALLOWED_EXTENSIONS = {
-    ".pdf",
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".webp",
-    ".heic",
-    ".docx",
-    ".xlsx",
-    ".txt",
+EXT_TO_MIME = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+    ".avif": "image/avif",
+    ".txt": "text/plain",
+    ".csv": "text/csv",
+    ".rtf": "application/rtf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".odt": "application/vnd.oasis.opendocument.text",
 }
 
-ALLOWED_MIME = {
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "image/heic",
-    "image/heif",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "text/plain",
+ALLOWED_EXTENSIONS = frozenset(EXT_TO_MIME)
+ALLOWED_MIME = frozenset(EXT_TO_MIME.values()) | {"image/heif"}
+
+OFFICE_ZIP_EXT = {
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".odt": "application/vnd.oasis.opendocument.text",
 }
 
-MAGIC_PREFIXES: list[tuple[bytes, str, str]] = [
-    (b"%PDF", "application/pdf", ".pdf"),
-    (b"\xff\xd8\xff", "image/jpeg", ".jpg"),
-    (b"\x89PNG\r\n\x1a\n", "image/png", ".png"),
-    (b"RIFF", "image/webp", ".webp"),
-    (b"PK\x03\x04", "application/zip", ".docx"),
-]
+OLE_EXT = {
+    ".doc": "application/msword",
+    ".xls": "application/vnd.ms-excel",
+    ".ppt": "application/vnd.ms-powerpoint",
+}
+
+HEIF_BRANDS = (b"heic", b"heif", b"heix", b"heim", b"heis", b"hevc", b"hevx", b"mif1", b"msf1")
 
 
 def storage_root() -> Path:
@@ -84,36 +95,64 @@ def resolve_key(storage_key: str) -> Path:
     return path
 
 
+def _ftyp_brands(data: bytes) -> bytes:
+    if len(data) < 12 or data[4:8] != b"ftyp":
+        return b""
+    size = int.from_bytes(data[:4], "big")
+    end = size if 16 <= size <= 256 else min(64, len(data))
+    return data[8:min(end, len(data))]
+
+
+def _sniff(data: bytes, name: str) -> tuple[str | None, str | None]:
+    if data.startswith(b"%PDF"):
+        return "application/pdf", ".pdf"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg", ".jpg" if not name.endswith(".jpeg") else ".jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png", ".png"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp", ".webp"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return "image/gif", ".gif"
+    if data.startswith(b"BM"):
+        return "image/bmp", ".bmp"
+    if data.startswith(b"II*\x00") or data.startswith(b"MM\x00*"):
+        return "image/tiff", ".tiff"
+    brands = _ftyp_brands(data)
+    if brands:
+        if b"avif" in brands or b"avis" in brands:
+            return "image/avif", ".avif"
+        if any(brand in brands for brand in HEIF_BRANDS):
+            ext = ".heif" if name.endswith(".heif") else ".heic"
+            mime = "image/heif" if ext == ".heif" else "image/heic"
+            return mime, ext
+    if data.startswith(b"PK\x03\x04"):
+        for ext, mime in OFFICE_ZIP_EXT.items():
+            if name.endswith(ext):
+                return mime, ext
+        return None, None
+    if data.startswith(b"\xd0\xcf\x11\xe0"):
+        for ext, mime in OLE_EXT.items():
+            if name.endswith(ext):
+                return mime, ext
+        if name.endswith(".doc"):
+            return OLE_EXT[".doc"], ".doc"
+        return OLE_EXT[".doc"], ".doc"
+    return None, None
+
+
 def detect_type(data: bytes, filename: str) -> tuple[str, str]:
-    name = filename.lower()
+    name = (filename or "upload").lower().strip()
     ext = Path(name).suffix
-    mime = "application/octet-stream"
-    for prefix, detected_mime, detected_ext in MAGIC_PREFIXES:
-        if data.startswith(prefix):
-            mime = detected_mime
-            if detected_ext == ".docx" and name.endswith(".xlsx"):
-                ext = ".xlsx"
-                mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            elif detected_ext == ".docx" and name.endswith(".docx"):
-                mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                ext = ".docx"
-            elif detected_ext != ".docx":
-                ext = detected_ext if ext not in {".jpeg", ".jpg"} else ext
-            break
-    if data[:8] == b"ftypheic" or b"ftypheic" in data[:16] or b"ftypheif" in data[:16]:
-        mime = "image/heic"
-        ext = ".heic"
-    if ext == ".txt" or (not data[:8].isascii() is False and name.endswith(".txt")):
-        if name.endswith(".txt"):
-            mime = "text/plain"
-            ext = ".txt"
-    if ext not in ALLOWED_EXTENSIONS:
+    sniffed_mime, sniffed_ext = _sniff(data, name)
+    if sniffed_mime and sniffed_ext:
+        mime, ext = sniffed_mime, sniffed_ext
+    elif ext in EXT_TO_MIME:
+        mime = EXT_TO_MIME[ext]
+    else:
         raise AppError("UNSUPPORTED_TYPE", f"File type {ext or 'unknown'} is not supported", 415)
-    if mime not in ALLOWED_MIME and ext not in {".docx", ".xlsx", ".heic"}:
-        if ext == ".txt":
-            mime = "text/plain"
-        else:
-            raise AppError("UNSUPPORTED_TYPE", "File MIME type is not allowed", 415)
+    if ext not in ALLOWED_EXTENSIONS or mime not in ALLOWED_MIME:
+        raise AppError("UNSUPPORTED_TYPE", f"File type {ext or 'unknown'} is not supported", 415)
     return mime, ext
 
 

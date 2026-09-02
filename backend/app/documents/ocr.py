@@ -30,7 +30,19 @@ class TesseractEngine(OCREngine):
         page_count = 1
         if mime == "application/pdf" or path.suffix.lower() == ".pdf":
             text, pages, page_count = _extract_pdf(path)
-        elif mime.startswith("image/") or path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".heic"}:
+        elif mime.startswith("image/") or path.suffix.lower() in {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+            ".gif",
+            ".bmp",
+            ".tif",
+            ".tiff",
+            ".heic",
+            ".heif",
+            ".avif",
+        }:
             text, pages = _extract_image(path)
         elif path.suffix.lower() == ".txt":
             text = path.read_text(encoding="utf-8", errors="ignore")

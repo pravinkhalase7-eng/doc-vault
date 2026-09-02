@@ -40,6 +40,7 @@ import {
   type SpeechRecognitionLike,
 } from "@/lib/speech";
 import { newId } from "@/lib/id";
+import { VAULT_FILE_ACCEPT } from "@/lib/file-accept";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -156,7 +157,7 @@ const suggestions = [
 
 function isImageMime(mime?: string, name?: string) {
   if (mime?.startsWith("image/")) return true;
-  return /\.(png|jpe?g|gif|webp|heic|bmp)$/i.test(name || "");
+  return /\.(png|jpe?g|gif|webp|heic|heif|bmp|tiff?|avif)$/i.test(name || "");
 }
 
 function formatBytes(n?: number) {
@@ -1154,6 +1155,7 @@ export function VaultChat() {
         ref={docInput}
         type="file"
         multiple
+        accept={VAULT_FILE_ACCEPT}
         className="hidden"
         onChange={(e) => {
           onPickedFiles(e.target.files);
@@ -1163,7 +1165,7 @@ export function VaultChat() {
       <input
         ref={galleryInput}
         type="file"
-        accept="image/*,video/*"
+        accept="image/*,image/heic,image/heif,.heic,.heif,video/*"
         multiple
         className="hidden"
         onChange={(e) => {
@@ -1174,7 +1176,7 @@ export function VaultChat() {
       <input
         ref={cameraInput}
         type="file"
-        accept="image/*"
+        accept="image/*,image/heic,image/heif,.heic,.heif"
         capture="environment"
         className="hidden"
         onChange={(e) => {

@@ -6,6 +6,7 @@ import { useDropzone } from "react-dropzone";
 import { toast } from "sonner";
 import { X } from "lucide-react";
 import { api, apiForm } from "@/lib/api";
+import { VAULT_FILE_ACCEPT } from "@/lib/file-accept";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -121,10 +122,10 @@ function UploadForm() {
         {...getRootProps()}
         className={`rounded-2xl border bg-card p-4 ${isDragActive ? "border-primary" : ""}`}
       >
-        <input {...getInputProps()} />
+        <input {...getInputProps()} accept={VAULT_FILE_ACCEPT} />
         {files.length === 0 ? (
           <button type="button" className="w-full py-10 text-sm text-muted-foreground" onClick={open}>
-            {isDragActive ? "Drop files" : "Drop files here or choose"}
+            {isDragActive ? "Drop files" : "Drop photos, PDFs, or Word files"}
           </button>
         ) : (
           <div className="space-y-3">
