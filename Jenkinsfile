@@ -269,7 +269,8 @@ Then rebuild.''')
           set +a
 
           export API_HOST_PORT=${API_HOST_PORT:-8000}
-          export WEB_HOST_PORT=${WEB_HOST_PORT:-80}
+          export WEB_HOST_PORT=${WEB_HOST_PORT:-8088}
+          echo "Publishing Nginx on host port ${WEB_HOST_PORT}"
 
           echo "=== DATABASE_URL after bash source ==="
           echo "DATABASE_URL=${DATABASE_URL}"
