@@ -103,10 +103,11 @@ services:
       - backend
 
   nginx:
-    image: nginx:1.27-alpine
+    image: ${NGINX_IMAGE:-docvault-nginx:latest}
     container_name: docvault-nginx
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
     ports:
       - "${WEB_HOST_PORT:-80}:80"
     depends_on:

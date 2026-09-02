@@ -57,6 +57,8 @@ pipeline {
     API_IMAGE_LATEST     = 'docvault-api:latest'
     WEB_IMAGE            = "docvault-web:${env.BUILD_NUMBER}"
     WEB_IMAGE_LATEST     = 'docvault-web:latest'
+    NGINX_IMAGE          = "docvault-nginx:${env.BUILD_NUMBER}"
+    NGINX_IMAGE_LATEST   = 'docvault-nginx:latest'
     COMPOSE_PROJECT_NAME = 'docvault'
   }
 
@@ -73,6 +75,8 @@ pipeline {
           test -f docker-compose.yml || { echo "ERROR: docker-compose.yml missing"; exit 1; }
           test -f docker/backend/Dockerfile || { echo "ERROR: docker/backend/Dockerfile missing"; exit 1; }
           test -f docker/frontend/Dockerfile || { echo "ERROR: docker/frontend/Dockerfile missing"; exit 1; }
+          test -f docker/nginx/Dockerfile || { echo "ERROR: docker/nginx/Dockerfile missing"; exit 1; }
+          test -f nginx/nginx.conf || { echo "ERROR: nginx/nginx.conf missing"; exit 1; }
           test -f backend/requirements.txt || { echo "ERROR: backend/requirements.txt missing"; exit 1; }
           test -f backend/scripts/jenkins_smoke.py || { echo "ERROR: jenkins_smoke.py missing"; exit 1; }
           test -f scripts/normalize_deploy_env.py || { echo "ERROR: normalize_deploy_env.py missing"; exit 1; }
@@ -181,7 +185,7 @@ Then rebuild.''')
             echo "=== Stop previous DocVault containers ==="
             docker compose -f docker-compose.yml down --remove-orphans || true
             docker rm -f docvault-api docvault-web docvault-postgres docvault-redis docvault-celery-worker docvault-celery-beat docvault-nginx 2>/dev/null || true
-            docker rmi -f docvault-api:latest docvault-web:latest 2>/dev/null || true
+            docker rmi -f docvault-api:latest docvault-web:latest docvault-nginx:latest 2>/dev/null || true
             echo "=== Remaining docvault images ==="
             docker images | grep docvault || echo none
             echo "=== Docker volumes ==="
@@ -221,6 +225,9 @@ Then rebuild.''')
             -t ${WEB_IMAGE} -t ${WEB_IMAGE_LATEST} \
             -f docker/frontend/Dockerfile .
 
+          echo "Building Nginx image..."
+          docker build -t ${NGINX_IMAGE} -t ${NGINX_IMAGE_LATEST} -f docker/nginx/Dockerfile .
+
           docker images | grep docvault | head -n 20 || docker images | head -n 12
         '''
       }
@@ -253,6 +260,7 @@ Then rebuild.''')
           export IMAGE_TAG=${BUILD_NUMBER}
           export API_IMAGE=docvault-api:${BUILD_NUMBER}
           export WEB_IMAGE=docvault-web:${BUILD_NUMBER}
+          export NGINX_IMAGE=docvault-nginx:${BUILD_NUMBER}
           cp -f .env.deploy .env
 
           set -a
