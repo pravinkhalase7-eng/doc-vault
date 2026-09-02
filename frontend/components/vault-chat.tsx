@@ -39,6 +39,7 @@ import {
   stopSpeaking,
   type SpeechRecognitionLike,
 } from "@/lib/speech";
+import { newId } from "@/lib/id";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -449,7 +450,7 @@ export function VaultChat() {
     const localAttachments: Attachment[] = files.map((file, index) => {
       const image = file.type.startsWith("image/") || isImageMime(file.type, file.name);
       return {
-        id: crypto.randomUUID(),
+        id: newId(),
         title: savedNames[index] || file.name,
         original_filename: file.name,
         mime_type: file.type,
@@ -459,7 +460,7 @@ export function VaultChat() {
       };
     });
     const userItem: ThreadItem = {
-      id: crypto.randomUUID(),
+      id: newId(),
       role: "user",
       content: userText,
       at: new Date().toISOString(),
@@ -570,7 +571,7 @@ export function VaultChat() {
         ...current,
         ...chosen
           .filter((doc) => !have.has(doc.id))
-          .map((doc) => ({ kind: "vault" as const, localId: crypto.randomUUID(), doc })),
+          .map((doc) => ({ kind: "vault" as const, localId: newId(), doc })),
       ];
     });
     setVaultOpen(false);
@@ -623,7 +624,7 @@ export function VaultChat() {
         original_filename: "Attached file",
       }));
     const userItem: ThreadItem = {
-      id: crypto.randomUUID(),
+      id: newId(),
       role: "user",
       content: caption,
       at: new Date().toISOString(),
