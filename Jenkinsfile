@@ -316,7 +316,7 @@ Then rebuild.''')
           done
 
           echo "Running database migrations..."
-          docker compose -f docker-compose.yml run --rm --no-deps --no-build backend alembic upgrade head
+          docker compose -f docker-compose.yml run --rm --no-deps backend alembic upgrade head
 
           RECREATE=""
           if [ "${FORCE_RECREATE}" = "true" ]; then
