@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { newId } from "./id";
+import { installUuidPolyfill, newId } from "./id";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -26,6 +26,19 @@ describe("newId", () => {
       expect(newId()).toMatch(UUID_RE);
     } finally {
       vi.unstubAllGlobals();
+    }
+  });
+
+  it("installs randomUUID on HTTP-like crypto", () => {
+    const original = crypto.randomUUID;
+    // @ts-expect-error — simulate an insecure HTTP origin
+    crypto.randomUUID = undefined;
+    try {
+      installUuidPolyfill();
+      expect(typeof crypto.randomUUID).toBe("function");
+      expect(crypto.randomUUID()).toMatch(UUID_RE);
+    } finally {
+      crypto.randomUUID = original;
     }
   });
 });

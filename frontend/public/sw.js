@@ -1,4 +1,4 @@
-const CACHE = "docvault-shell-v2";
+const CACHE = "docvault-shell-v3";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();

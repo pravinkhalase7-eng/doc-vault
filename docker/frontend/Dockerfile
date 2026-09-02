@@ -6,6 +6,9 @@ RUN npm ci
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+# Jenkins passes BUILD_NUMBER so this layer cannot reuse a stale frontend compile.
+ARG WEB_BUILD_ID=
+RUN echo "$WEB_BUILD_ID" >/tmp/web-build-id
 COPY frontend .
 ARG NEXT_PUBLIC_API_URL=
 ARG NEXT_PUBLIC_APP_NAME=DocVault

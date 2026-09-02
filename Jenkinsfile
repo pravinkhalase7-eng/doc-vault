@@ -222,6 +222,7 @@ Then rebuild.''')
           docker build \
             --build-arg "NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-}" \
             --build-arg "NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME:-DocVault}" \
+            --build-arg "WEB_BUILD_ID=${BUILD_NUMBER}-${GIT_COMMIT:-unknown}" \
             -t ${WEB_IMAGE} -t ${WEB_IMAGE_LATEST} \
             -f docker/frontend/Dockerfile .
 
