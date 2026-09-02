@@ -168,6 +168,11 @@ Then rebuild.''')
             grep DATABASE_URL .env.deploy || true
             echo "=== POSTGRES_PASSWORD from .env.deploy ==="
             grep POSTGRES_PASSWORD .env.deploy || true
+            if grep -qE '^TWILIO_ACCOUNT_SID=.+' .env.deploy; then
+              echo "Twilio SID: set (from env file or Jenkins Global properties)"
+            else
+              echo "Twilio SID: empty — set TWILIO_* in Jenkins Global properties or doc-vault.env"
+            fi
           '''
           echo "Prepared .env.deploy for ${params.DEPLOY_ENV}"
         }

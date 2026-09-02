@@ -37,6 +37,9 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       STORAGE_ROOT: /var/lib/docvault
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
     volumes:
       - ${STORAGE_HOST_PATH:-/var/lib/docvault}:/var/lib/docvault
     depends_on:
@@ -65,6 +68,9 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       STORAGE_ROOT: /var/lib/docvault
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
     volumes:
       - ${STORAGE_HOST_PATH:-/var/lib/docvault}:/var/lib/docvault
     depends_on:
@@ -84,6 +90,9 @@ services:
       DATABASE_SYNC_URL: postgresql://${POSTGRES_USER:-docvault}:${POSTGRES_PASSWORD:-docvault}@postgres:5432/${POSTGRES_DB:-docvault}
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
     depends_on:
       - redis
       - backend

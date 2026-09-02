@@ -328,5 +328,5 @@ async def _finish_or_ask_time(
     from app.config import get_settings
 
     if not get_settings().twilio_configured:
-        settings_note = " Phone calling is not configured on the server yet, so I'll save it until Twilio is set."
+        settings_note = " Your number is saved. The server still needs a Twilio rebuild before I can place the call."
     return _reply(answer + settings_note)

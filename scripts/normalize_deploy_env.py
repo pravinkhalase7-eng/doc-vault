@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from pathlib import Path
+
+TWILIO_KEYS = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER")
 
 
 def upsert(text: str, key: str, value: str) -> str:
@@ -74,6 +77,11 @@ def main() -> None:
             if item and item not in merged:
                 merged.append(item)
         text = upsert(text, "CORS_ORIGINS", ",".join(merged))
+
+    for key in TWILIO_KEYS:
+        value = (os.environ.get(key) or "").strip()
+        if value:
+            text = upsert(text, key, value)
 
     path.write_text(text if text.endswith("\n") else text + "\n")
 
