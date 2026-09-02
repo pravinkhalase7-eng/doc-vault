@@ -13,6 +13,7 @@ from app.models.document import (
 )
 from app.models.entity import Entity, EntityRelationship
 from app.models.notification import EmailLog, Notification
+from app.models.family import Family, FamilyCollectionShare, FamilyMember
 from app.models.sharing import Share, ShareLink, ShareLinkEvent
 from app.models.system import BackupRecord, SecureLink, SecurityEvent, StorageUsage
 from app.models.user import (
@@ -52,6 +53,9 @@ __all__ = [
     "Share",
     "ShareLink",
     "ShareLinkEvent",
+    "Family",
+    "FamilyMember",
+    "FamilyCollectionShare",
     "Entity",
     "EntityRelationship",
     "Notification",

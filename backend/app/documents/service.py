@@ -65,6 +65,8 @@ def quota_warning(usage: StorageUsage) -> int | None:
 
 
 async def visible_document_ids(db: AsyncSession, user_id: str) -> set[str]:
+    from app.family.service import family_document_ids
+
     owned = (await db.scalars(select(Document.id).where(Document.user_id == user_id, Document.deleted_at.is_(None)))).all()
     shared = (
         await db.scalars(
@@ -75,7 +77,8 @@ async def visible_document_ids(db: AsyncSession, user_id: str) -> set[str]:
             )
         )
     ).all()
-    return {str(i) for i in owned if i} | {str(i) for i in shared if i}
+    family = await family_document_ids(db, user_id)
+    return {str(i) for i in owned if i} | {str(i) for i in shared if i} | family
 
 
 async def get_document_for_user(
@@ -101,9 +104,13 @@ async def get_document_for_user(
             Share.revoked_at.is_(None),
         )
     )
-    if not share:
-        raise ForbiddenError("DOCUMENT_FORBIDDEN", "You do not have access to this document")
-    return doc
+    if share:
+        return doc
+    from app.family.service import family_document_ids
+
+    if document_id in await family_document_ids(db, user_id):
+        return doc
+    raise ForbiddenError("DOCUMENT_FORBIDDEN", "You do not have access to this document")
 
 
 def _tag_names(doc: Document) -> list[str]:
@@ -239,13 +246,17 @@ async def list_documents(
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[Document], int]:
-    filters = [Document.user_id == user_id]
     if trash:
-        filters.append(Document.trashed_at.is_not(None))
-        filters.append(Document.deleted_at.is_(None))
+        filters = [Document.user_id == user_id, Document.trashed_at.is_not(None), Document.deleted_at.is_(None)]
     else:
-        filters.append(Document.trashed_at.is_(None))
-        filters.append(Document.deleted_at.is_(None))
+        visible = await visible_document_ids(db, user_id)
+        if not visible:
+            return [], 0
+        filters = [
+            Document.id.in_(visible),
+            Document.trashed_at.is_(None),
+            Document.deleted_at.is_(None),
+        ]
     if category_id:
         filters.append(Document.category_id == category_id)
     if status:

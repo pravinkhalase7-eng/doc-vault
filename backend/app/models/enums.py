@@ -42,6 +42,11 @@ class ShareRole(str, Enum):
     VIEWER = "VIEWER"
 
 
+class FamilyRole(str, Enum):
+    OWNER = "OWNER"
+    MEMBER = "MEMBER"
+
+
 class TaskStatus(str, Enum):
     OPEN = "OPEN"
     IN_PROGRESS = "IN_PROGRESS"

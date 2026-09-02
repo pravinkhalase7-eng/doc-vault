@@ -15,6 +15,7 @@ import {
   Shield,
   Sun,
   UserRound,
+  Users,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/lib/auth";
@@ -100,6 +101,7 @@ export default function SettingsPage() {
 
       <Group>
         <Row href="/privacy" icon={Lock} tone="bg-primary" label="Privacy" hint="AI access and data controls" />
+        <Row href="/family" icon={Users} tone="bg-amber-500" label="Family" hint="Invite members and share folders" />
         <Row href="/notifications" icon={Bell} tone="bg-primary" label="Notifications" />
         <Row href="/collections" icon={Folders} tone="bg-amber-500" label="Collections" />
       </Group>

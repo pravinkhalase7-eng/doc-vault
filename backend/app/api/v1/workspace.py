@@ -161,6 +161,8 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
 
 @router.get("/collections")
 async def list_collections(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from app.family.service import owned_shared_collection_ids, shared_collection_payloads
+
     await file_unfiled_into_default(db, user.id)
     await db.commit()
     rows = (
@@ -168,7 +170,17 @@ async def list_collections(user: User = Depends(get_current_user), db: AsyncSess
     ).all()
     rows = sorted(rows, key=lambda col: (not is_default_collection(col), (col.name or "").lower()))
     docs_by_col = await document_ids_for_collections(db, [col.id for col in rows])
-    return ok([serialize_collection(col, docs_by_col.get(col.id, [])) for col in rows])
+    family_shared = await owned_shared_collection_ids(db, user.id)
+    owned = []
+    for col in rows:
+        data = serialize_collection(col, docs_by_col.get(col.id, []))
+        data["shared"] = False
+        data["shared_with_family"] = col.id in family_shared
+        data["can_edit"] = True
+        data["owner_name"] = None
+        owned.append(data)
+    incoming = await shared_collection_payloads(db, user.id)
+    return ok(owned + incoming)
 
 
 @router.post("/collections")
@@ -240,7 +252,9 @@ async def delete_collection(
 async def collection_files(
     collection_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    await owned_collection(db, user.id, collection_id)
+    from app.family.service import accessible_collection
+
+    await accessible_collection(db, user.id, collection_id)
     docs_by_col = await document_ids_for_collections(db, [collection_id])
     ids = docs_by_col.get(collection_id, [])
     if not ids:

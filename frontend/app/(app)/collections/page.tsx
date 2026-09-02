@@ -12,8 +12,10 @@ import {
   Pencil,
   Plus,
   Search,
+  Share2,
   Trash2,
   Upload,
+  Users,
 } from "lucide-react";
 import { FileActions } from "@/components/file-actions";
 import { FolderGlyph } from "@/components/folder-glyph";
@@ -55,6 +57,10 @@ type Collection = {
   parent_id?: string | null;
   document_ids: string[];
   is_default?: boolean;
+  shared?: boolean;
+  shared_with_family?: boolean;
+  can_edit?: boolean;
+  owner_name?: string | null;
 };
 
 type Doc = {
@@ -70,6 +76,10 @@ function displayName(col: Collection) {
 
 function liveCount(col: Collection, docs: Doc[]) {
   return col.document_ids.filter((id) => docs.some((doc) => doc.id === id)).length;
+}
+
+function canEdit(col: Collection) {
+  return col.can_edit !== false && !col.shared;
 }
 
 function countLabel(files: number, folders: number) {
@@ -139,7 +149,8 @@ function CollectionsBrowser() {
     }
     return chain;
   }, [byId, current]);
-  const shown = current ? childrenOf(current.id) : childrenOf(null);
+  const shown = current ? childrenOf(current.id) : childrenOf(null).filter((col) => !col.shared);
+  const sharedRoots = current ? [] : items.filter((col) => col.shared && !col.parent_id);
   const filesInView = current
     ? (current.document_ids.map((id) => docs.find((doc) => doc.id === id)).filter(Boolean) as Doc[])
     : [];
@@ -149,6 +160,24 @@ function CollectionsBrowser() {
   function startCreate(parentId: string | null) {
     setCreateParentId(parentId);
     setCreateOpen(true);
+  }
+
+  async function toggleFamilyShare(col: Collection) {
+    try {
+      if (col.shared_with_family) {
+        await api(`/family/collections/${col.id}`, { method: "DELETE" });
+        toast.success("Folder is private again");
+      } else {
+        await api("/family/collections", {
+          method: "POST",
+          body: JSON.stringify({ collection_id: col.id }),
+        });
+        toast.success("Shared with family");
+      }
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not update sharing");
+    }
   }
 
   async function renameCollection(name: string) {
@@ -188,13 +217,20 @@ function CollectionsBrowser() {
           onUpload={`/documents/upload?collection=${current.id}`}
           onAddFolder={() => startCreate(current.id)}
           onRename={() => setRenameCol(current)}
-          onDelete={current.is_default ? undefined : () => setDeleteId(current.id)}
+          onDelete={current.is_default || !canEdit(current) ? undefined : () => setDeleteId(current.id)}
+          onShareFamily={canEdit(current) && !current.is_default ? () => toggleFamilyShare(current) : undefined}
         />
       ) : (
         <div className="flex items-end justify-between gap-3">
           <div>
             <h1 className="text-3xl">Folders</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Open a folder to see what’s inside.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Open a folder to see what’s inside.{" "}
+              <Link href="/family" className="text-primary">
+                Invite family
+              </Link>{" "}
+              to share folders with them.
+            </p>
           </div>
           <Button className="rounded-full" onClick={() => startCreate(null)}>
             <FolderPlus className="size-4" />
@@ -218,15 +254,35 @@ function CollectionsBrowser() {
           onChanged={() => load()}
         />
       ) : (
-        <FolderGrid
-          folders={shown}
-          docs={docs}
-          childrenOf={childrenOf}
-          onOpen={openFolder}
-          onAddFolder={startCreate}
-          onRename={setRenameCol}
-          onDelete={setDeleteId}
-        />
+        <div className="space-y-8">
+          <FolderGrid
+            folders={shown}
+            docs={docs}
+            childrenOf={childrenOf}
+            onOpen={openFolder}
+            onAddFolder={startCreate}
+            onRename={setRenameCol}
+            onDelete={setDeleteId}
+            onShareFamily={toggleFamilyShare}
+          />
+          {sharedRoots.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Users className="size-4" />
+                Shared with family
+              </h2>
+              <FolderGrid
+                folders={sharedRoots}
+                docs={docs}
+                childrenOf={childrenOf}
+                onOpen={openFolder}
+                onAddFolder={startCreate}
+                onRename={setRenameCol}
+                onDelete={setDeleteId}
+              />
+            </div>
+          )}
+        </div>
       )}
 
       <NameDialog
@@ -283,6 +339,7 @@ function FolderHeader({
   onAddFolder,
   onRename,
   onDelete,
+  onShareFamily,
 }: {
   col: Collection;
   crumbs: Collection[];
@@ -293,7 +350,9 @@ function FolderHeader({
   onAddFolder: () => void;
   onRename: () => void;
   onDelete?: () => void;
+  onShareFamily?: () => void;
 }) {
+  const editable = canEdit(col);
   return (
     <div className="space-y-3">
       <button
@@ -312,31 +371,42 @@ function FolderHeader({
             {col.is_default && (
               <span className="shrink-0 text-[11px] font-medium text-muted-foreground">Default</span>
             )}
+            {(col.shared || col.shared_with_family) && (
+              <span className="shrink-0 text-[11px] font-medium text-muted-foreground">Family</span>
+            )}
           </div>
-          <p className="text-sm text-muted-foreground">{countLabel(fileCount, folderCount)}</p>
+          <p className="text-sm text-muted-foreground">
+            {col.shared && col.owner_name ? `Shared by ${col.owner_name} · ` : ""}
+            {countLabel(fileCount, folderCount)}
+          </p>
         </div>
-        <FolderMenu
-          col={col}
-          compact
-          onOpen={() => undefined}
-          onAddFolder={onAddFolder}
-          onRename={onRename}
-          onDelete={onDelete}
-        />
+        {(editable || onShareFamily || onDelete) && (
+          <FolderMenu
+            col={col}
+            compact
+            onOpen={() => undefined}
+            onAddFolder={onAddFolder}
+            onRename={onRename}
+            onDelete={onDelete}
+            onShareFamily={onShareFamily}
+          />
+        )}
       </div>
-      <div className="flex gap-2">
-        <Link
-          href={onUpload}
-          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-primary text-sm text-primary-foreground"
-        >
-          <Upload className="size-3.5" />
-          Upload
-        </Link>
-        <Button variant="outline" className="h-9 flex-1 rounded-full" onClick={onAddFolder}>
-          <Plus className="size-3.5" />
-          New folder
-        </Button>
-      </div>
+      {editable && (
+        <div className="flex gap-2">
+          <Link
+            href={onUpload}
+            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-primary text-sm text-primary-foreground"
+          >
+            <Upload className="size-3.5" />
+            Upload
+          </Link>
+          <Button variant="outline" className="h-9 flex-1 rounded-full" onClick={onAddFolder}>
+            <Plus className="size-3.5" />
+            New folder
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -349,6 +419,7 @@ function FolderGrid({
   onAddFolder,
   onRename,
   onDelete,
+  onShareFamily,
 }: {
   folders: Collection[];
   docs: Doc[];
@@ -357,12 +428,14 @@ function FolderGrid({
   onAddFolder: (parentId: string | null) => void;
   onRename: (col: Collection) => void;
   onDelete: (id: string) => void;
+  onShareFamily?: (col: Collection) => void;
 }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {folders.map((col) => {
         const files = liveCount(col, docs);
         const nested = childrenOf(col.id).length;
+        const editable = canEdit(col);
         return (
           <div key={col.id} className="group relative rounded-2xl border bg-card">
             <button
@@ -373,7 +446,10 @@ function FolderGrid({
               <FolderGlyph />
               <span className="min-w-0">
                 <span className="block truncate font-medium">{displayName(col)}</span>
-                <span className="block text-xs text-muted-foreground">{countLabel(files, nested)}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {col.shared && col.owner_name ? `${col.owner_name} · ` : ""}
+                  {countLabel(files, nested)}
+                </span>
               </span>
             </button>
             <div className="absolute top-2.5 right-2">
@@ -382,7 +458,8 @@ function FolderGrid({
                 onOpen={() => onOpen(col.id)}
                 onAddFolder={() => onAddFolder(col.id)}
                 onRename={() => onRename(col)}
-                onDelete={col.is_default ? undefined : () => onDelete(col.id)}
+                onDelete={col.is_default || !editable ? undefined : () => onDelete(col.id)}
+                onShareFamily={editable && !col.is_default && onShareFamily ? () => onShareFamily(col) : undefined}
               />
             </div>
           </div>
@@ -416,6 +493,7 @@ function FolderContents({
     `${doc.title} ${doc.original_filename}`.toLowerCase().includes(query.toLowerCase()),
   );
   const empty = folders.length === 0 && files.length === 0 && !adding;
+  const editable = canEdit(col);
 
   async function addDoc(id: string) {
     try {
@@ -442,10 +520,14 @@ function FolderContents({
       {empty ? (
         <div className="px-4 py-10 text-center">
           <p className="font-medium">Nothing in this folder yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">Upload a file or move one in from another folder.</p>
-          <button type="button" className="mt-4 text-sm text-primary" onClick={() => setAdding(true)}>
-            Move a file in
-          </button>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {editable ? "Upload a file or move one in from another folder." : "This folder was shared with your family."}
+          </p>
+          {editable && (
+            <button type="button" className="mt-4 text-sm text-primary" onClick={() => setAdding(true)}>
+              Move a file in
+            </button>
+          )}
         </div>
       ) : (
         <ul>
@@ -489,7 +571,7 @@ function FolderContents({
                     currentCollectionId={col.id}
                     onMoved={onChanged}
                   />
-                  {!col.is_default && (
+                  {!col.is_default && editable && (
                     <button
                       type="button"
                       className="text-xs text-muted-foreground"
@@ -504,7 +586,7 @@ function FolderContents({
           })}
         </ul>
       )}
-      {adding ? (
+      {adding && editable ? (
         <div className="space-y-2 border-t p-3">
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -533,7 +615,7 @@ function FolderContents({
           </button>
         </div>
       ) : (
-        !empty && (
+        !empty && editable && (
           <div className="border-t px-4 py-3">
             <button type="button" className="text-sm text-primary" onClick={() => setAdding(true)}>
               Move a file in
@@ -551,6 +633,7 @@ function FolderMenu({
   onAddFolder,
   onRename,
   onDelete,
+  onShareFamily,
   compact,
 }: {
   col: Collection;
@@ -558,9 +641,11 @@ function FolderMenu({
   onAddFolder: () => void;
   onRename: () => void;
   onDelete?: () => void;
+  onShareFamily?: () => void;
   compact?: boolean;
 }) {
   const router = useRouter();
+  const editable = canEdit(col);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -571,22 +656,30 @@ function FolderMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
         {!compact && <DropdownMenuItem onClick={onOpen}>Open</DropdownMenuItem>}
-        {!compact && (
+        {editable && !compact && (
           <DropdownMenuItem onClick={() => router.push(`/documents/upload?collection=${col.id}`)}>
             <Upload className="size-4" />
             Upload here
           </DropdownMenuItem>
         )}
-        {!compact && (
+        {editable && !compact && (
           <DropdownMenuItem onClick={onAddFolder}>
             <Plus className="size-4" />
             New folder inside
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem onClick={onRename}>
-          <Pencil className="size-4" />
-          Rename
-        </DropdownMenuItem>
+        {editable && (
+          <DropdownMenuItem onClick={onRename}>
+            <Pencil className="size-4" />
+            Rename
+          </DropdownMenuItem>
+        )}
+        {onShareFamily && (
+          <DropdownMenuItem onClick={onShareFamily}>
+            <Share2 className="size-4" />
+            {col.shared_with_family ? "Stop sharing with family" : "Share with family"}
+          </DropdownMenuItem>
+        )}
         {onDelete && (
           <>
             <DropdownMenuSeparator />

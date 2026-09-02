@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html><body style="font-family:Georgia,serif;background:#f6f3ee;padding:24px;">
+  <div style="max-width:560px;margin:auto;background:#fff;border-radius:16px;padding:28px;">
+    <p style="letter-spacing:0.2em;font-size:11px;color:#3f6f64;">PRIVATE AI</p>
+    <h1>{{ inviter }} invited you to their family vault</h1>
+    {% if has_account %}
+    <p>Open DocVault to see folders they shared with your family.</p>
+    {% else %}
+    <p>Create a DocVault account with this email to join and see shared folders.</p>
+    {% endif %}
+    <p><a href="{{ link }}" style="background:#1f6f61;color:#fff;padding:10px 16px;border-radius:999px;text-decoration:none;">{{ "Open family" if has_account else "Create account" }}</a></p>
+  </div>
+</body></html>

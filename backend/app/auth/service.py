@@ -99,6 +99,9 @@ async def register_user(
         )
     )
     await log_security_event(db, "register", user_id=user.id, ip=ip, user_agent=user_agent)
+    from app.family.service import claim_family_invites
+
+    await claim_family_invites(db, user)
     await db.commit()
     await db.refresh(user)
     return user, raw
