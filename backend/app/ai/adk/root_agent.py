@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.adk.permission import ToolContext
 from app.ai.adk.tools import VaultTools
+from app.ai.chat_intent import is_general_chat
 from app.ai.context_builder import build_context
 from app.ai.evidence_checker import validate_answer
 from app.ai.privacy_gateway import check_ai_request
@@ -29,8 +30,9 @@ log = get_logger("adk")
 settings = get_settings()
 
 ROOT_INSTRUCTION = """
-You are DocVaultAgent, a private personal document assistant.
-Never invent document facts. If evidence is missing, say you could not find it.
+You are DocVaultAgent, a friendly private personal document assistant.
+Greet the user if they say hello. Answer their questions.
+Never invent document facts. If they asked about a file and evidence is missing, say you could not find it.
 Use tools. Cite document title and page. Do not request raw files.
 If the user wants a reminder, appointment, or a phone call at a time, schedule it and call them with Twilio when it is due.
 Destructive actions (delete, share, send) require user confirmation.
@@ -101,6 +103,11 @@ async def run_vault_agent(
             else "You don't have any collections yet."
         )
         decision = {"allowed_document_ids": [], "blocked": []}
+    elif is_general_chat(message) and not attached_docs:
+        router = get_router()
+        answer = await router.chat(message, language=lang, external_allowed=external)
+        evidence = []
+        decision = {"allowed_document_ids": [], "blocked": []}
     else:
         hits = await hybrid_search(db, user.id, message, limit=8)
         matched_cols = await matching_collections(db, user.id, message)
@@ -151,7 +158,9 @@ async def run_vault_agent(
             context["tool_duplicates"] = tool_result.get("data")
         router = get_router()
         answer = await router.reason(context, external_allowed=external)
-        answer, evidence = validate_answer(answer, list(docs), context["records"])
+        answer, evidence = validate_answer(
+            answer, list(docs), context["records"], question=message
+        )
     db.add(
         AIMessage(
             conversation_id=conversation.id,

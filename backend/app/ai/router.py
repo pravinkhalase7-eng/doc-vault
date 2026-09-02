@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from app.ai.base import AIProvider
+from app.ai.chat_intent import CHAT_INSTRUCTION, is_general_chat, local_chat_reply
 from app.ai.gemini.provider import GeminiProvider
 from app.config import get_settings
 from app.documents.processing import classify_local, extract_fields, local_embedding
@@ -74,13 +75,27 @@ class AIRouter:
         except Exception:
             return self._local_reason(context)
 
+    async def chat(self, question: str, *, language: str = "en", external_allowed: bool) -> str:
+        fallback = local_chat_reply(question, language=language)
+        if not self._use_external(external_allowed):
+            return fallback
+        prompt = f"{CHAT_INSTRUCTION}\nLanguage: {language}\nUser: {question}"
+        try:
+            reply = (await self.provider.generate(prompt)).strip()
+            return reply or fallback
+        except Exception:
+            return fallback
+
     def _local_reason(self, context: dict) -> str:
         records = context.get("records") or []
-        question = (context.get("question") or "").lower()
+        question = context.get("question") or ""
+        lowered = question.lower()
         matched = context.get("matched_collections") or []
         folder_names = [col.get("name") for col in matched if col.get("name")]
         folder = ", ".join(folder_names)
-        if "expir" in question:
+        if not records and is_general_chat(question):
+            return local_chat_reply(question, language=str(context.get("language") or "en"))
+        if "expir" in lowered:
             lines = []
             for rec in records:
                 if rec.get("expiry_date"):

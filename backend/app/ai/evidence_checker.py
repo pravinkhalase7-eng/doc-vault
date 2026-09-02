@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.ai.chat_intent import is_general_chat
 from app.models.document import Document
 
 
@@ -18,8 +19,16 @@ def _file_fields(doc: Document) -> dict:
     }
 
 
-def validate_answer(answer: str, documents: list[Document], context_records: list[dict]) -> tuple[str, list[dict]]:
+def validate_answer(
+    answer: str,
+    documents: list[Document],
+    context_records: list[dict],
+    *,
+    question: str = "",
+) -> tuple[str, list[dict]]:
     if not documents and not context_records:
+        if question and is_general_chat(question):
+            return answer, []
         return MISSING, []
     evidence = []
     lower = answer.lower()

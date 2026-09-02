@@ -148,11 +148,11 @@ type Pending =
   | { kind: "vault"; localId: string; doc: VaultDoc };
 
 const suggestions = [
+  "Hello",
+  "What can you do?",
   "Show me all collections",
   "Remind me tomorrow at 10am to renew my passport",
-  "Doctor appointment Friday at 4pm, call me 1 hour before",
   "When does my car insurance expire?",
-  "Which documents are expiring this month?",
 ];
 
 function isImageMime(mime?: string, name?: string) {
@@ -953,7 +953,7 @@ export function VaultChat() {
             <p className="mt-1 text-sm text-muted-foreground">
               {mode === "voice"
                 ? "Tap the mic and say a command, like “delete Passport” or “show me all collections”."
-                : "Messages stay in your vault. Tap + to save a file into a collection, then ask about it."}
+                : "Say hello, ask a question, or tap + to save a file and ask about it."}
             </p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               {suggestions.map((item) => (

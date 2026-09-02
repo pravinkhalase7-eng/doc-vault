@@ -59,9 +59,12 @@ def build_context(
         "today": date.today().isoformat(),
         "language": language,
         "instruction": (
-            "Answer only from the provided records and collection notes. If matched_collections is set, "
-            "only discuss documents in those collections. If records are empty, say that collection has no documents. "
-            "If the answer is not present, say "
+            "If the user is greeting you or asking how you can help, greet them and explain "
+            "you can find files, set reminders, and answer questions. "
+            "For questions about their documents, answer only from the provided records and collection notes. "
+            "If matched_collections is set, only discuss documents in those collections. "
+            "If they asked about a file and records are empty, say that collection has no documents. "
+            "If a document fact is not present, say "
             "\"I couldn't find this information in your documents.\" Never invent dates, "
             "numbers, or names. Cite document title and page for every factual claim. "
             "Respond in the user's language."
