@@ -95,6 +95,28 @@ async def revoke_share(share_id: str, user: User = Depends(get_current_user), db
     return ok({"revoked": True})
 
 
+@router.get("/links")
+async def list_links(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    rows = (
+        await db.scalars(
+            select(ShareLink).where(ShareLink.user_id == user.id, ShareLink.revoked_at.is_(None)).order_by(ShareLink.created_at.desc())
+        )
+    ).all()
+    return ok(
+        [
+            {
+                "id": rec.id,
+                "document_id": rec.document_id,
+                "collection_id": rec.collection_id,
+                "expires_at": rec.expires_at,
+                "download_allowed": rec.download_allowed,
+                "view_count": rec.view_count,
+            }
+            for rec in rows
+        ]
+    )
+
+
 @router.post("/links")
 async def create_link(
     payload: ShareLinkCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
@@ -115,6 +137,7 @@ async def create_link(
         view_only=not payload.download_allowed,
     )
     db.add(link)
+    await db.flush()
     db.add(ShareLinkEvent(share_link_id=link.id, event="created"))
     await db.commit()
     return ok({"token": raw, "url": f"{settings.app_url}/share/{raw}", "expires_at": link.expires_at})

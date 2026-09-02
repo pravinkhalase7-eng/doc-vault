@@ -13,26 +13,58 @@ export async function downloadDocument(id: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function shareDocument(id: string, title: string, filename: string) {
-  const blob = await apiBlob(`/documents/${id}/download`);
-  const file = new File([blob], filename || title || "document", {
-    type: blob.type || "application/octet-stream",
-  });
-  if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
-    await navigator.share({ files: [file], title });
-    return;
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.left = "-9999px";
+    document.body.appendChild(field);
+    field.select();
+    const copied = document.execCommand("copy");
+    field.remove();
+    return copied;
   }
+}
+
+export async function shareDocument(id: string, title: string, filename: string) {
+  if (window.isSecureContext && typeof navigator.canShare === "function") {
+    try {
+      const blob = await apiBlob(`/documents/${id}/download`);
+      const file = new File([blob], filename || title || "document", {
+        type: blob.type || "application/octet-stream",
+      });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title });
+        return;
+      }
+    } catch (err) {
+      if (isShareCancel(err)) return;
+    }
+  }
+
   const created = await api<{ token: string }>("/sharing/links", {
     method: "POST",
     body: JSON.stringify({ document_id: id, download_allowed: true, expires_hours: 72 }),
   });
   const url = `${window.location.origin}/share/${created.token}`;
-  if (typeof navigator.share === "function") {
-    await navigator.share({ title, url });
+  if (window.isSecureContext && typeof navigator.share === "function") {
+    try {
+      await navigator.share({ title, url });
+      return;
+    } catch (err) {
+      if (isShareCancel(err)) return;
+    }
+  }
+  if (await copyText(url)) {
+    toast.success("Share link copied");
     return;
   }
-  await navigator.clipboard.writeText(url);
-  toast.success("Share link copied");
+  toast.message("Share link", { description: url });
 }
 
 export function isShareCancel(err: unknown) {
