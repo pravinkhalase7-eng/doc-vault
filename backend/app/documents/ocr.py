@@ -99,7 +99,7 @@ def _extract_image(path: Path) -> tuple[str, list[dict]]:
         from PIL import Image
         import pytesseract
 
-        image = Image.open(path)
+        image = _apply_exif(Image.open(path))
         text = pytesseract.image_to_string(image)
         return text, [{"page": 1, "text": text, "confidence": 0.8}]
     except Exception as exc:
@@ -151,6 +151,50 @@ def _register_heif() -> None:
         pass
 
 
+def _apply_exif(image):
+    from PIL import ImageOps
+
+    try:
+        oriented = ImageOps.exif_transpose(image)
+        return oriented if oriented is not None else image
+    except Exception:
+        return image
+
+
+def _display_size(src: Path) -> tuple[int, int] | None:
+    from PIL import Image
+
+    _register_heif()
+    try:
+        with Image.open(src) as image:
+            width, height = image.size
+            orientation = int(image.getexif().get(0x0112) or 1)
+    except Exception:
+        return None
+    if orientation in (5, 6, 7, 8):
+        return height, width
+    return width, height
+
+
+def reel_preview_is_sideways(src: Path, thumb: Path) -> bool:
+    """True when a stored reel JPEG is landscape/portrait flipped vs the oriented original."""
+    if not src.exists() or not thumb.exists():
+        return False
+    display = _display_size(src)
+    if not display:
+        return False
+    from PIL import Image
+
+    try:
+        with Image.open(thumb) as preview:
+            tw, th = preview.size
+    except Exception:
+        return True
+    src_portrait = display[1] >= display[0]
+    thumb_portrait = th >= tw
+    return src_portrait != thumb_portrait
+
+
 def _rasterize_page(src: Path, mime: str):
     from PIL import Image
 
@@ -175,7 +219,7 @@ def _rasterize_page(src: Path, mime: str):
         ".heif",
         ".avif",
     }:
-        return Image.open(src)
+        return _apply_exif(Image.open(src))
     return None
 
 

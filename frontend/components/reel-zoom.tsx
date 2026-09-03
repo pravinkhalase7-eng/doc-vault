@@ -44,7 +44,7 @@ export function ZoomStage({
   function fitScale() {
     if (!naturalW || !naturalH) return 1;
     const { vw, vh } = viewSize();
-    return Math.max(vw / naturalW, vh / naturalH);
+    return Math.min(vw / naturalW, vh / naturalH);
   }
 
   function maxScale() {

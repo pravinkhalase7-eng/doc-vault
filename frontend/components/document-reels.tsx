@@ -221,8 +221,8 @@ function ReelSlide({
   const image = Boolean(jpeg) || (isImage(doc) && Boolean(url));
   const likes = (doc.use_count || 0) + (liked ? 1 : 0);
   const canZoom = Boolean(url && (image || video));
-  const zoomW = natural.w || 1080;
-  const zoomH = natural.h || 1920;
+  const zoomW = natural.w;
+  const zoomH = natural.h;
 
   useEffect(() => {
     if (!url || !image) return;
@@ -315,14 +315,14 @@ function ReelSlide({
               src={url}
               alt={doc.title}
               draggable={false}
-              className="block h-full w-full max-w-none select-none"
+              className="block h-full w-full max-w-none object-contain select-none"
             />
           ) : (
             <video
               ref={videoRef}
               src={url}
               poster={poster || undefined}
-              className="block h-full w-full max-w-none"
+              className="block h-full w-full max-w-none object-contain"
               loop
               playsInline
               muted={muted}
@@ -337,7 +337,7 @@ function ReelSlide({
         <iframe title={doc.title} src={url} className="pointer-events-none h-full w-full border-0 bg-neutral-950" />
       ) : url && image ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={doc.title} className="h-full w-full object-cover" />
+        <img src={url} alt={doc.title} className="h-full w-full object-contain" />
       ) : (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-white">
           <span className="flex size-20 items-center justify-center rounded-3xl bg-white/10">

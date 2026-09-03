@@ -24,7 +24,7 @@ from app.models.enums import VerificationStatus
 from app.models.user import User
 from app.schemas.common import ConfirmMetadataRequest, DocumentMove, DocumentUpdate
 from app.storage.local import resolve_key
-from app.documents.ocr import generate_reel_images
+from app.documents.ocr import generate_reel_images, reel_preview_is_sideways
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -216,12 +216,15 @@ async def preview(document_id: str, user: User = Depends(get_file_user), db: Asy
 
 
 async def _ensure_reel_jpegs(db: AsyncSession, doc) -> None:
-    thumb_ok = bool(doc.thumbnail_key) and resolve_key(doc.thumbnail_key).exists()
-    preview_ok = bool(doc.preview_key) and resolve_key(doc.preview_key).exists()
-    if thumb_ok and preview_ok:
-        return
     src = resolve_key(doc.storage_key)
     if not src.exists():
+        return
+    thumb_file = resolve_key(doc.thumbnail_key) if doc.thumbnail_key else None
+    preview_file = resolve_key(doc.preview_key) if doc.preview_key else None
+    thumb_ok = bool(thumb_file and thumb_file.exists())
+    preview_ok = bool(preview_file and preview_file.exists())
+    sideways = bool(thumb_file and reel_preview_is_sideways(src, thumb_file))
+    if thumb_ok and preview_ok and not sideways:
         return
     thumb, preview = await generate_reel_images(src, doc.user_id, doc.id, doc.mime_type)
     if thumb:
@@ -238,7 +241,7 @@ def _jpeg_response(path, filename: str):
         media_type="image/jpeg",
         headers={
             "Content-Disposition": f'inline; filename="{filename}"',
-            "Cache-Control": "private, max-age=86400",
+            "Cache-Control": "private, max-age=0, must-revalidate",
         },
     )
 
