@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 import { cachedBlobUrl, loadBlobUrl, prefetchReelDocs } from "@/lib/preview-cache";
 import { downloadDocument, isShareCancel, shareDocument } from "@/lib/files";
 import { useAuth } from "@/lib/auth";
