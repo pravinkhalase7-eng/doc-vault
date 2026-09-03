@@ -19,6 +19,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   function afterLogin(user: { onboarding_completed: boolean }) {
+    const next = new URLSearchParams(window.location.search).get("next");
+    const safe =
+      next && next.startsWith("/") && !next.startsWith("//") && !next.includes("://") ? next : null;
+    if (user.onboarding_completed && safe) {
+      router.push(safe);
+      return;
+    }
     router.push(user.onboarding_completed ? "/home" : "/onboarding");
   }
 

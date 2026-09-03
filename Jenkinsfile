@@ -30,6 +30,11 @@ pipeline {
       description: 'Delete Postgres data (users, documents, collections). Leave OFF so accounts survive deploys. Turn ON only if you need a fresh empty database.'
     )
     string(
+      name: 'PUBLIC_HOST',
+      defaultValue: 'docvault.doxstation.com',
+      description: 'HTTPS hostname. Add a DNS A record to this VPS, then run scripts/enable_host_https.sh on the host. Empty keeps http://IP:8088 only.'
+    )
+    string(
       name: 'PUBLIC_API_URL',
       defaultValue: '',
       description: 'Browser-facing API URL baked into the web image. Leave empty to use same-origin /api via Nginx.'
@@ -149,10 +154,13 @@ doc-vault.env is gitignored and is not in the repo.''')
 
           sh '''
             set -e
+            export PUBLIC_HOST="${PUBLIC_HOST:-}"
             python3 scripts/normalize_deploy_env.py .env.deploy
             if [ -n "$PUBLIC_API_URL" ]; then
               python3 scripts/normalize_deploy_env.py .env.deploy --public-api-url "$PUBLIC_API_URL"
             fi
+            echo "=== PUBLIC_HOST / APP_URL ==="
+            grep -E '^(PUBLIC_HOST|APP_URL|CORS_ORIGINS)=' .env.deploy || true
             echo "=== DATABASE_URL from .env.deploy ==="
             grep DATABASE_URL .env.deploy || true
             echo "=== POSTGRES_PASSWORD from .env.deploy ==="
@@ -394,8 +402,10 @@ doc-vault.env is gitignored and is not in the repo.''')
   post {
     success {
       echo "DocVault ${params.DEPLOY_ENV} build #${env.BUILD_NUMBER} succeeded"
-      echo "UI (Nginx): host port WEB_HOST_PORT (default 80)"
-      echo "API is reached via Nginx /api; Postgres and Redis stay on the Docker network"
+      echo "HTTP UI: host port WEB_HOST_PORT (8088)"
+      echo "HTTPS: add DNS A ${params.PUBLIC_HOST} -> this VPS, then on the host run:"
+      echo "  sudo PUBLIC_HOST=${params.PUBLIC_HOST} bash scripts/enable_host_https.sh"
+      echo "Then open https://${params.PUBLIC_HOST} (needed for lock-screen push and Android Share)"
     }
     failure {
       echo "DocVault build #${env.BUILD_NUMBER} failed — check stage logs"

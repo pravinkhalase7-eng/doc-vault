@@ -6,7 +6,7 @@ export function PwaRegister() {
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
     const onLoad = () => {
-      void navigator.serviceWorker.register("/sw.js");
+      void navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
     };
     window.addEventListener("load", onLoad);
     return () => window.removeEventListener("load", onLoad);

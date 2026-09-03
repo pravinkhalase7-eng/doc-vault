@@ -72,6 +72,28 @@ def main() -> None:
     text = upsert(text, "STORAGE_ROOT", "/var/lib/docvault")
 
     public = (args.public_api_url or "").strip()
+    host = (os.environ.get("PUBLIC_HOST") or read_value(text, "PUBLIC_HOST") or "").strip()
+    host = host.replace("https://", "").replace("http://", "").split("/")[0]
+    if host:
+        origin = f"https://{host}"
+        text = upsert(text, "PUBLIC_HOST", host)
+        text = upsert(text, "APP_URL", origin)
+        text = upsert(text, "API_URL", origin)
+        mail_host = ".".join(host.split(".")[-2:]) if "." in host else host
+        if not read_value(text, "VAPID_MAILTO") or read_value(text, "VAPID_MAILTO") in {
+            "",
+            "mailto:docvault@localhost",
+        }:
+            text = upsert(text, "VAPID_MAILTO", f"mailto:docvault@{mail_host}")
+        cors = read_value(text, "CORS_ORIGINS")
+        extras = [origin]
+        merged = []
+        for item in (cors.split(",") if cors else []) + extras:
+            item = item.strip()
+            if item and item not in merged:
+                merged.append(item)
+        text = upsert(text, "CORS_ORIGINS", ",".join(merged))
+
     if public:
         origin = public
         if origin.endswith("/api/v1"):

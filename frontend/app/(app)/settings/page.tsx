@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, ChevronRight, Clapperboard, Folders, HelpCircle, Lock, LogOut, MessageSquare, Moon, Phone, Shield, Sun, UserRound, Users } from "lucide-react";
+import { Bell, ChevronRight, Clapperboard, Folders, HelpCircle, Lock, LogOut, MessageSquare, Moon, Phone, Share2, Shield, Sun, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { api } from "@/lib/api";
@@ -120,11 +120,13 @@ function PushAlertsForm() {
   const [saving, setSaving] = useState(false);
   const [secure, setSecure] = useState(false);
   const [supported, setSupported] = useState(false);
+  const [installed, setInstalled] = useState(false);
   const enabled = Boolean(user?.preferences?.notification_push);
 
   useEffect(() => {
     setSecure(window.isSecureContext);
     setSupported(pushSupported());
+    setInstalled(window.matchMedia("(display-mode: standalone)").matches);
   }, []);
 
   async function toggle(on: boolean) {
@@ -155,13 +157,43 @@ function PushAlertsForm() {
           <p className="text-[15px]">Reminder alerts</p>
           <p className="text-xs text-muted-foreground">
             {supported
-              ? "Lock-screen notification when a reminder is due"
+              ? installed
+                ? "Lock-screen alert when a reminder is due"
+                : "On iPhone, Add to Home screen first, then turn this on. Android can use it after installing from Chrome."
               : secure
                 ? "This browser does not support web push"
-                : "Needs HTTPS (or localhost). You’ll still see alerts in Notifications."}
+                : "Lock-screen push needs HTTPS. You’ll still get the alert in the Notifications tab."}
           </p>
         </div>
         <Switch checked={enabled && supported} disabled={saving || !supported} onCheckedChange={toggle} />
+      </div>
+    </div>
+  );
+}
+
+function ShareIntoVaultHint() {
+  const [secure, setSecure] = useState(false);
+  const [installed, setInstalled] = useState(false);
+
+  useEffect(() => {
+    setSecure(window.isSecureContext);
+    setInstalled(window.matchMedia("(display-mode: standalone)").matches);
+  }, []);
+
+  const hint = !secure
+    ? "Android Share needs HTTPS plus Add to Home screen. iPhone cannot list a PWA in Share — in Photos tap Share → Save to Files, then in DocVault use Add files and pick it."
+    : installed
+      ? "Android: Photos → Share → DocVault. iPhone still cannot list this app in Share; Save to Files, then Add files in DocVault."
+      : "Android: Add to Home screen in Chrome, then Share can list DocVault. iPhone cannot add a PWA to Share; Save to Files, then Add files here.";
+
+  return (
+    <div className="flex items-start gap-3 rounded-2xl bg-card px-4 py-4">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-white">
+        <Share2 className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px]">Share into vault</p>
+        <p className="text-xs text-muted-foreground">{hint}</p>
       </div>
     </div>
   );
@@ -206,6 +238,8 @@ export default function SettingsPage() {
       <PhoneCallForm />
 
       <PushAlertsForm />
+
+      <ShareIntoVaultHint />
 
       <Group>
         <Row href="/ai" icon={MessageSquare} tone="bg-primary" label="Chats" hint="Ask My Vault" />
