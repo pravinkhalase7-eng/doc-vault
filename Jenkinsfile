@@ -37,17 +37,12 @@ pipeline {
     string(
       name: 'ENV_CREDENTIAL_ID',
       defaultValue: 'doc-vault-env-file',
-      description: 'Jenkins Secret file credential ID (only used when USE_ENV_CREDENTIAL=true)'
+      description: 'Jenkins Secret file credential ID for the uploaded doc-vault.env'
     )
     booleanParam(
       name: 'USE_ENV_CREDENTIAL',
-      defaultValue: false,
-      description: 'OFF by default. Turn ON only after you create the Jenkins Secret file credential.'
-    )
-    booleanParam(
-      name: 'USE_REPO_ENV_EXAMPLE',
       defaultValue: true,
-      description: 'Use doc-vault.env from the repo when no credential is loaded'
+      description: 'ON: load the uploaded Jenkins Secret file (doc-vault-env-file). Leave ON.'
     )
   }
 
@@ -125,21 +120,15 @@ pipeline {
 
           if (!usedEnv) {
             sh '''
-              echo "=== Looking for fallback env files ==="
-              ls -la doc-vault.env .env /var/jenkins_home/doc-vault.env /var/jenkins_home/secrets/doc-vault.env 2>/dev/null || true
+              echo "=== Looking for Jenkins-host fallback env files ==="
+              ls -la /var/jenkins_home/doc-vault.env /var/jenkins_home/secrets/doc-vault.env 2>/dev/null || true
             '''
             def candidates = [
               '/var/jenkins_home/secrets/doc-vault.env',
               '/var/jenkins_home/doc-vault.env',
-              'doc-vault.env',
-              '.env',
             ]
             for (p in candidates) {
               if (fileExists(p)) {
-                if (p == 'doc-vault.env' && !params.USE_REPO_ENV_EXAMPLE) {
-                  echo "Skipping repo doc-vault.env because USE_REPO_ENV_EXAMPLE=false"
-                  continue
-                }
                 sh "cp -f '${p}' .env.deploy"
                 usedEnv = true
                 echo "Using env file: ${p} → .env.deploy"
@@ -150,12 +139,12 @@ pipeline {
 
           if (!usedEnv) {
             error('''No env source found.
-Create Jenkins credential:
+Upload doc-vault.env as a Jenkins credential:
   Kind: Secret file
   ID: doc-vault-env-file
   Scope: Global
-Or keep doc-vault.env in the repo and leave USE_REPO_ENV_EXAMPLE=true.
-Then rebuild.''')
+Leave USE_ENV_CREDENTIAL=true, then rebuild.
+doc-vault.env is gitignored and is not in the repo.''')
           }
 
           sh '''
@@ -169,9 +158,9 @@ Then rebuild.''')
             echo "=== POSTGRES_PASSWORD from .env.deploy ==="
             grep POSTGRES_PASSWORD .env.deploy || true
             if grep -qE '^TWILIO_ACCOUNT_SID=.+' .env.deploy; then
-              echo "Twilio SID: set (from env file or Jenkins Global properties)"
+              echo "Twilio SID: set (from Jenkins secret file)"
             else
-              echo "Twilio SID: empty — set TWILIO_* in Jenkins Global properties or doc-vault.env"
+              echo "Twilio SID: empty — set TWILIO_* in the uploaded Jenkins Secret file (doc-vault-env-file) and rebuild"
             fi
           '''
           echo "Prepared .env.deploy for ${params.DEPLOY_ENV}"

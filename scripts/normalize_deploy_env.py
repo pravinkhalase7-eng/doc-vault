@@ -37,10 +37,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("env_file")
     parser.add_argument("--public-api-url", default="")
+    parser.add_argument(
+        "--overlay-from",
+        default="",
+        help="Optional extra env file; non-empty TWILIO_*/VAPID_* here win",
+    )
     args = parser.parse_args()
 
     path = Path(args.env_file)
     text = path.read_text()
+    overlay_text = Path(args.overlay_from).read_text() if args.overlay_from else ""
 
     text = text.replace("localhost:5432", "postgres:5432")
     text = text.replace("127.0.0.1:5432", "postgres:5432")
@@ -86,9 +92,15 @@ def main() -> None:
         text = upsert(text, "CORS_ORIGINS", ",".join(merged))
 
     for key in TWILIO_KEYS:
-        value = (os.environ.get(key) or "").strip()
-        if value:
-            text = upsert(text, key, value)
+        from_repo = read_value(overlay_text, key) if overlay_text else ""
+        if from_repo:
+            text = upsert(text, key, from_repo)
+            continue
+        if read_value(text, key):
+            continue
+        from_jenkins = (os.environ.get(key) or "").strip()
+        if from_jenkins:
+            text = upsert(text, key, from_jenkins)
 
     path.write_text(text if text.endswith("\n") else text + "\n")
 

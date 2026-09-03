@@ -329,5 +329,5 @@ async def _finish_or_ask_time(
     from app.config import get_settings
 
     if not get_settings().twilio_configured:
-        settings_note = " Your number is saved. The server still needs a Twilio rebuild before I can place the call."
+        settings_note = " Your number is saved. Fill TWILIO_* in the Jenkins doc-vault.env secret file and redeploy before I can place the call."
     return _reply(answer + settings_note)
