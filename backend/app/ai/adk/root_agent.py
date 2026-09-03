@@ -94,7 +94,8 @@ async def run_vault_agent(
     if handled:
         answer = handled["answer"]
         proposal = handled.get("proposal")
-        decision = {"allowed_document_ids": [], "blocked": []}
+        docs = list(handled.get("docs") or [])
+        decision = {"allowed_document_ids": [doc.id for doc in docs], "blocked": []}
     elif listing_collections:
         tree = await collection_tree(db, user.id)
         answer = (

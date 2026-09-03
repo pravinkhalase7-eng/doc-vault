@@ -119,7 +119,7 @@ def parse_vault_intent(message: str) -> ParsedIntent:
         return ParsedIntent("delete_collection", clean_name(match.group(1)) or None)
 
     match = re.search(
-        r"(?:delete|remove)\s+(?:the\s+)?(?:file|document|doc)(?:\s+(?:named|called))?(?:\s+(.+))?",
+        r"(?:delete|remove)\s+(?:the\s+)?(?:files?|documents?|docs)\b(?:\s+(?:named|called))?(?:\s+(.+))?",
         lowered,
     )
     if match:
@@ -130,6 +130,29 @@ def parse_vault_intent(message: str) -> ParsedIntent:
         name = clean_name(match.group(1))
         if name:
             return ParsedIntent("delete_named", name)
+
+    if not re.search(r"\b(collections?|folders?)\b", lowered):
+        match = re.search(
+            r"^(?:show|list|give|get|find|open)\s+(?:me\s+)?(?:all\s+)?(?:the\s+)?(?:my\s+)?"
+            r"(?:files?|documents?|docs)\b(?:\s+(?:named|called)\s+(.+))?$",
+            lowered,
+        )
+        if match:
+            name = clean_name(match.group(1)) if match.lastindex and match.group(1) else None
+            return ParsedIntent("show_document" if name else "list_documents", name)
+        match = re.search(
+            r"^(?:show|open|find)\s+(?:me\s+)?(?:the\s+)?(?:file|document|doc)\s+(?:named|called)?\s*(.+)$",
+            lowered,
+        )
+        if match:
+            return ParsedIntent("show_document", clean_name(match.group(1)))
+        match = re.match(r"^(?:show|open)\s+(.+)$", lowered)
+        if match:
+            name = clean_name(match.group(1))
+            if name and name not in {"me", "this", "that"}:
+                return ParsedIntent("show_document", name)
+        if lowered in {"documents", "files", "docs", "my documents", "my files"}:
+            return ParsedIntent("list_documents")
     return ParsedIntent("none")
 
 
@@ -265,6 +288,10 @@ async def handle_vault_action(
         return None
 
     await _cancel_pending(db, user.id)
+    if intent.kind == "list_documents":
+        return await _list_vault_documents(db, user)
+    if intent.kind == "show_document":
+        return await _show_named_document(db, user, intent.name)
     if intent.kind == "delete_collection_files":
         return await _start_delete_collection_files(db, user, intent.name, conversation_id)
     if intent.kind == "delete_collection":
@@ -407,6 +434,34 @@ async def _resolve_asked_name(
             return await _start_delete_collection_files(db, user, name, conversation_id)
         return await _start_delete_collection(db, user, name, conversation_id)
     return await _start_delete_document(db, user, name, conversation_id)
+
+
+async def _list_vault_documents(db: AsyncSession, user: User) -> dict:
+    docs, _total = await list_documents(db, user.id, limit=40)
+    visible = [doc for doc in docs if not doc.trashed_at]
+    if not visible:
+        return {"answer": "You don't have any files yet. Tap + to save one."}
+    names = [doc.title for doc in visible[:30]]
+    extra = f"\n…and {len(visible) - 30} more." if len(visible) > 30 else ""
+    return {
+        "answer": f"Here are your files. Tap one to open it.\n{_bullet(names)}{extra}",
+        "docs": visible[:24],
+    }
+
+
+async def _show_named_document(db: AsyncSession, user: User, name: str | None) -> dict:
+    if not name:
+        return await _list_vault_documents(db, user)
+    matched = await _matching_documents(db, user.id, name)
+    if not matched:
+        return {"answer": f'I could not find a file named "{name}". Try “show documents” to see everything.'}
+    if len(matched) == 1:
+        doc = matched[0]
+        return {"answer": f"Here's {doc.title}.", "docs": [doc]}
+    return {
+        "answer": f'I found {len(matched)} files matching "{name}". Tap one to open it.',
+        "docs": matched[:12],
+    }
 
 
 async def _start_delete_collection_files(

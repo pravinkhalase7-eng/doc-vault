@@ -3,13 +3,14 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from app.config import get_settings
 from app.database import SessionLocal
+from app.config import get_settings
 from app.documents.processing import process_document
 from app.email.digest_service import send_daily_briefings, send_weekly_reports
 from app.email.notification_service import notify
 from app.models.collection import Reminder
 from app.models.document import Document
+from app.models.notification import Notification
 from app.models.user import User
 from app.reminders.service import deliver_reminder_call, due_call_reminders
 from app.workers.celery_app import celery_app
@@ -48,6 +49,15 @@ def scan_expiries() -> None:
             for doc in docs:
                 user = await db.get(User, doc.user_id)
                 if not user:
+                    continue
+                already = await db.scalar(
+                    select(Notification.id).where(
+                        Notification.user_id == user.id,
+                        Notification.kind == "expiry",
+                        Notification.link == f"{settings.app_url}/documents/{doc.id}",
+                    )
+                )
+                if already:
                     continue
                 await notify(
                     db,
@@ -118,8 +128,11 @@ def fire_due_reminder_calls() -> int:
         async with SessionLocal() as db:
             rows = await due_call_reminders(db)
             for reminder in rows:
-                await deliver_reminder_call(db, reminder)
-            await db.commit()
+                try:
+                    await deliver_reminder_call(db, reminder)
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
             return len(rows)
 
     return asyncio.run(_inner())

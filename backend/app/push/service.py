@@ -121,7 +121,24 @@ async def send_web_push(db: AsyncSession, user: User, *, title: str, body: str, 
     return sent
 
 
-async def alert_reminder(db: AsyncSession, user: User, *, title: str, body: str) -> None:
+async def alert_reminder(
+    db: AsyncSession,
+    user: User,
+    *,
+    title: str,
+    body: str,
+    reminder_id: str | None = None,
+) -> None:
+    if reminder_id:
+        existing = await db.scalar(
+            select(Notification.id).where(
+                Notification.user_id == user.id,
+                Notification.kind == "reminder",
+                Notification.link == f"/notifications?reminder={reminder_id}",
+            )
+        )
+        if existing:
+            return
     db.add(
         Notification(
             user_id=user.id,
@@ -129,7 +146,8 @@ async def alert_reminder(db: AsyncSession, user: User, *, title: str, body: str)
             body=body,
             kind="reminder",
             channel=NotificationChannel.IN_APP,
-            link="/notifications",
+            link=f"/notifications?reminder={reminder_id}" if reminder_id else "/notifications",
+            extra={"reminder_id": reminder_id} if reminder_id else None,
         )
     )
     await send_web_push(db, user, title=title, body=body, url="/notifications")

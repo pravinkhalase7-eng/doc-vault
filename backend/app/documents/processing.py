@@ -12,7 +12,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.documents.ocr import generate_thumbnail, get_ocr_engine
+from app.documents.ocr import generate_reel_images, get_ocr_engine
 from app.logging import get_logger
 from app.models.document import Category, Document, DocumentChunk, DocumentMetadata, DocumentType
 from app.models.enums import DocumentStatus, HIGHLY_SENSITIVE_TYPES, SensitivityLevel, VerificationStatus
@@ -149,9 +149,11 @@ async def process_document(db: AsyncSession, document_id: str) -> None:
         result = engine.extract(path, doc.mime_type)
         doc.ocr_text = result.get("text") or ""
         doc.page_count = result.get("page_count") or 1
-        thumb = await generate_thumbnail(path, doc.user_id, doc.id, doc.mime_type)
+        thumb, preview = await generate_reel_images(path, doc.user_id, doc.id, doc.mime_type)
         if thumb:
             doc.thumbnail_key = thumb
+        if preview:
+            doc.preview_key = preview
 
         doc.status = DocumentStatus.AI_PROCESSING
         await db.commit()

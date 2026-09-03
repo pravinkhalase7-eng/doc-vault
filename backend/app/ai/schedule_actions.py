@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ai import AIProposal
 from app.models.collection import Reminder
 from app.models.user import User
+from app.ai.vault_actions import parse_vault_intent
 from app.reminders.service import (
     attach_phone,
     cancel_reminder,
@@ -181,7 +182,7 @@ async def handle_schedule_action(
                 f"Saved {view['phone_masked']}. I'll call you {view['when_label']} about {reminder.title}.",
                 _proposal_view(pending, "Phone saved"),
             )
-        if intent.kind == "none":
+        if intent.kind == "none" and parse_vault_intent(message).kind == "none" and not looks_like_phone(message):
             return _reply("I need a mobile number to call you, e.g. 98765 43210.")
         pending.status = "rejected"
         await db.flush()

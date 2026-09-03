@@ -44,6 +44,17 @@ def test_parse_delete_file_asks_for_name():
     assert parse_vault_intent("delete document").kind == "delete_document"
 
 
+def test_parse_show_documents():
+    assert parse_vault_intent("show documents").kind == "list_documents"
+    assert parse_vault_intent("show me my files").kind == "list_documents"
+    assert parse_vault_intent("list all documents").kind == "list_documents"
+    shown = parse_vault_intent("show passport")
+    assert shown.kind == "show_document"
+    assert shown.name == "passport"
+    assert parse_vault_intent("show me all collections").kind == "none"
+    assert parse_vault_intent("delete documents").kind == "delete_document"
+
+
 def test_parse_delete_named_document():
     intent = parse_vault_intent("delete the document Passport")
     assert intent.kind == "delete_document"

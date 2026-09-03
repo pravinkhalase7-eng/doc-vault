@@ -12,7 +12,6 @@ import {
   Shield,
   Upload,
   UserRound,
-  Files,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -20,13 +19,11 @@ import { HeaderActions } from "@/components/header-actions";
 
 const nav = [
   { href: "/home", label: "Home", icon: Home },
-  { href: "/documents", label: "Documents", icon: Files },
+  { href: "/collections", label: "Collections", icon: Folders },
   { href: "/reels", label: "Reels", icon: Clapperboard },
   { href: "/ai", label: "AI", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
-
-const desktopExtra = [{ href: "/collections", label: "Collections", icon: Folders }];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
@@ -50,7 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <h1 className="text-2xl font-bold tracking-tight">DocVault</h1>
           </Link>
           <nav className="flex flex-1 flex-col gap-1">
-            {[...nav.slice(0, 3), ...desktopExtra, ...nav.slice(3)].map((item) => {
+            {[...nav].map((item) => {
               const Icon = item.icon;
               const active = path.startsWith(item.href);
               return (

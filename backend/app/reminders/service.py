@@ -7,10 +7,9 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
-from app.config import get_settings
 from app.logging import get_logger
 from app.models.collection import Reminder
 from app.models.user import User
@@ -50,6 +49,7 @@ def _prefs_phone(user: User) -> str | None:
 def _extra(row: Reminder) -> dict:
     data = dict(row.extra or {})
     row.extra = data
+    flag_modified(row, "extra")
     return data
 
 
@@ -134,10 +134,14 @@ async def attach_phone(db: AsyncSession, user: User, reminder: Reminder, phone: 
     extra = _extra(reminder)
     extra["phone_number"] = phone
     extra["needs_phone"] = False
+    extra.pop("call_error", None)
     reminder.extra = extra
+    flag_modified(reminder, "extra")
     if user.preferences:
         user.preferences.phone_number = phone
-    if reminder.sent_at is None and not extra.get("cancelled"):
+    never_called = not extra.get("call_sid")
+    if never_called and not extra.get("cancelled"):
+        reminder.sent_at = None
         enqueue_reminder_call(reminder.id, reminder.fire_at)
     await db.flush()
     return reminder
@@ -159,6 +163,8 @@ async def due_call_reminders(db: AsyncSession, *, now: datetime | None = None) -
         extra = row.extra or {}
         if extra.get("cancelled"):
             continue
+        if extra.get("needs_phone") and not extra.get("phone_number"):
+            continue
         due.append(row)
     return due
 
@@ -167,7 +173,7 @@ async def deliver_reminder_call(db: AsyncSession, reminder: Reminder) -> str:
     extra = _extra(reminder)
     if extra.get("cancelled"):
         return "cancelled"
-    if reminder.sent_at:
+    if reminder.sent_at or extra.get("call_sid"):
         return "already_sent"
     user = (
         await db.scalars(select(User).options(selectinload(User.preferences)).where(User.id == reminder.user_id))
@@ -179,22 +185,29 @@ async def deliver_reminder_call(db: AsyncSession, reminder: Reminder) -> str:
             user,
             title="DocVault reminder",
             body=f"{reminder.title} — {when}",
+            reminder_id=reminder.id,
         )
         extra["alerted"] = True
         reminder.extra = extra
+        flag_modified(reminder, "extra")
+        await db.flush()
     phone = extra.get("phone_number")
     if not phone or extra.get("needs_phone"):
         extra["call_error"] = extra.get("call_error") or "No phone number on file"
         reminder.extra = extra
-        reminder.sent_at = now_utc()
+        flag_modified(reminder, "extra")
         return "no_phone"
-    settings = get_settings()
+    from app.config import get_settings as load_settings
+
+    load_settings.cache_clear()
+    settings = load_settings()
     language = extra.get("language") or "en"
     spoken = reminder_speech(reminder, language=language)
     extra["spoken_text"] = spoken
     if not settings.twilio_configured:
         extra["call_error"] = "Twilio is not configured"
         reminder.extra = extra
+        flag_modified(reminder, "extra")
         log.warning("twilio_missing", reminder_id=reminder.id)
         return "not_configured"
     from app.reminders.twilio_voice import place_reminder_call
@@ -204,11 +217,12 @@ async def deliver_reminder_call(db: AsyncSession, reminder: Reminder) -> str:
     except Exception as exc:
         extra["call_error"] = str(exc)
         reminder.extra = extra
-        reminder.sent_at = now_utc()
+        flag_modified(reminder, "extra")
         log.warning("voice_call_failed", reminder_id=reminder.id)
         return "failed"
     extra["call_sid"] = sid
     extra["call_error"] = None
     reminder.extra = extra
+    flag_modified(reminder, "extra")
     reminder.sent_at = now_utc()
     return "called"

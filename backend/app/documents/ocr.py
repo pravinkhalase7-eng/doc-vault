@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from app.logging import get_logger
-from app.storage.local import thumbnail_path, write_bytes
+from app.storage.local import preview_path, relative_key, thumbnail_path, write_bytes
 
 log = get_logger("ocr")
 
@@ -142,33 +142,66 @@ def get_ocr_engine(name: str | None = None) -> OCREngine:
     return TesseractEngine()
 
 
-async def generate_thumbnail(src: Path, user_id: str, document_id: str, mime: str) -> str | None:
+def _register_heif() -> None:
     try:
-        from PIL import Image
+        import pillow_heif
 
-        dest = thumbnail_path(user_id, document_id)
-        if mime == "application/pdf":
-            try:
-                from pdf2image import convert_from_path
+        pillow_heif.register_heif_opener()
+    except Exception:
+        pass
 
-                images = convert_from_path(str(src), dpi=72, first_page=1, last_page=1)
-                if not images:
-                    return None
-                image = images[0]
-            except Exception:
-                return None
-        elif mime.startswith("image/"):
-            image = Image.open(src)
-        else:
-            return None
-        image = image.convert("RGB")
-        image.thumbnail((480, 640))
-        buf = io.BytesIO()
-        image.save(buf, format="JPEG", quality=82)
-        await write_bytes(dest, buf.getvalue())
-        from app.storage.local import relative_key
 
-        return relative_key(dest)
+def _rasterize_page(src: Path, mime: str):
+    from PIL import Image
+
+    _register_heif()
+    lowered = (mime or "").lower()
+    suffix = src.suffix.lower()
+    if lowered == "application/pdf" or suffix == ".pdf":
+        from pdf2image import convert_from_path
+
+        images = convert_from_path(str(src), dpi=110, first_page=1, last_page=1)
+        return images[0] if images else None
+    if lowered.startswith("image/") or suffix in {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+        ".gif",
+        ".bmp",
+        ".tif",
+        ".tiff",
+        ".heic",
+        ".heif",
+        ".avif",
+    }:
+        return Image.open(src)
+    return None
+
+
+async def _save_jpeg(image, dest: Path, size: tuple[int, int], quality: int) -> str:
+    copy = image.copy()
+    copy = copy.convert("RGB")
+    copy.thumbnail(size)
+    buf = io.BytesIO()
+    copy.save(buf, format="JPEG", quality=quality, optimize=True)
+    await write_bytes(dest, buf.getvalue())
+    return relative_key(dest)
+
+
+async def generate_reel_images(src: Path, user_id: str, document_id: str, mime: str) -> tuple[str | None, str | None]:
+    try:
+        page = _rasterize_page(src, mime)
+        if page is None:
+            return None, None
+        thumb_key = await _save_jpeg(page, thumbnail_path(user_id, document_id), (480, 640), 82)
+        preview_key = await _save_jpeg(page, preview_path(user_id, document_id), (1080, 1920), 85)
+        return thumb_key, preview_key
     except Exception as exc:
-        log.info("thumbnail_failed", error=str(exc))
-        return None
+        log.info("reel_image_failed", error=str(exc))
+        return None, None
+
+
+async def generate_thumbnail(src: Path, user_id: str, document_id: str, mime: str) -> str | None:
+    thumb, _preview = await generate_reel_images(src, user_id, document_id, mime)
+    return thumb

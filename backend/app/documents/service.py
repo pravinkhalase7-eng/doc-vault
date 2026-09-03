@@ -164,6 +164,8 @@ def serialize_document(doc: Document) -> dict:
         "download_count": getattr(doc, "download_count", 0) or 0,
         "share_count": getattr(doc, "share_count", 0) or 0,
         "use_count": (getattr(doc, "download_count", 0) or 0) + (getattr(doc, "share_count", 0) or 0),
+        "has_thumbnail": bool(getattr(doc, "thumbnail_key", None)),
+        "has_preview": bool(getattr(doc, "preview_key", None)),
     }
 
 

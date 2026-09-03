@@ -20,7 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiBlob } from "@/lib/api";
+import { cachedBlobUrl, loadBlobUrl, prefetchReelDocs } from "@/lib/preview-cache";
 import { downloadDocument, isShareCancel, shareDocument } from "@/lib/files";
 import { useAuth } from "@/lib/auth";
 import {
@@ -83,10 +83,10 @@ function isPdf(doc: ReelDoc) {
   return (doc.mime_type || "").includes("pdf") || /\.pdf$/i.test(doc.original_filename || "");
 }
 
-function circularNear(a: number, b: number, n: number) {
+function circularNear(a: number, b: number, n: number, windowSize = 3) {
   if (n <= 1) return true;
   const dist = Math.abs(a - b);
-  return Math.min(dist, n - dist) <= 1;
+  return Math.min(dist, n - dist) <= windowSize;
 }
 
 function kindLabel(doc: ReelDoc) {
@@ -96,31 +96,54 @@ function kindLabel(doc: ReelDoc) {
   return "File";
 }
 
-function usePreview(id: string, enabled: boolean) {
-  const [url, setUrl] = useState("");
+function usePreview(doc: ReelDoc, enabled: boolean) {
+  const video = isVideo(doc);
+  const [jpeg, setJpeg] = useState(
+    () => cachedBlobUrl(`/documents/${doc.id}/reel-image`) || cachedBlobUrl(`/documents/${doc.id}/thumbnail`),
+  );
+  const [file, setFile] = useState(() => (video ? cachedBlobUrl(`/documents/${doc.id}/preview`) : ""));
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
-    let objectUrl = "";
     let cancelled = false;
     setFailed(false);
-    apiBlob(`/documents/${id}/preview`)
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
+    loadBlobUrl(`/documents/${doc.id}/thumbnail`)
+      .then((next) => {
+        if (!cancelled) setJpeg((current) => current || next);
+      })
+      .catch(() => undefined);
+    if (video) {
+      loadBlobUrl(`/documents/${doc.id}/preview`)
+        .then((next) => {
+          if (!cancelled) setFile(next);
+        })
+        .catch(() => {
+          if (!cancelled) setFailed(true);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+    loadBlobUrl(`/documents/${doc.id}/reel-image`)
+      .then((next) => {
+        if (!cancelled) setJpeg(next);
       })
       .catch(() => {
-        if (!cancelled) setFailed(true);
+        loadBlobUrl(`/documents/${doc.id}/preview`)
+          .then((next) => {
+            if (!cancelled) setFile(next);
+          })
+          .catch(() => {
+            if (!cancelled) setFailed(true);
+          });
       });
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [id, enabled]);
+  }, [doc.id, enabled, video]);
 
-  return { url, failed };
+  return { jpeg, file, url: video ? file : jpeg || file, poster: jpeg, failed };
 }
 
 function Action({
@@ -191,10 +214,10 @@ function ReelSlide({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [natural, setNatural] = useState({ w: 0, h: 0 });
-  const { url, failed } = usePreview(doc.id, nearby);
-  const image = isImage(doc);
+  const { jpeg, url, poster, failed } = usePreview(doc, nearby);
   const video = isVideo(doc);
   const pdf = isPdf(doc);
+  const image = Boolean(jpeg) || (isImage(doc) && Boolean(url));
   const likes = (doc.use_count || 0) + (liked ? 1 : 0);
   const canZoom = Boolean(url && (image || video));
   const zoomW = natural.w || 1080;
@@ -297,6 +320,7 @@ function ReelSlide({
             <video
               ref={videoRef}
               src={url}
+              poster={poster || undefined}
               className="block h-full w-full max-w-none"
               loop
               playsInline
@@ -308,7 +332,7 @@ function ReelSlide({
             />
           )}
         </ZoomStage>
-      ) : url && pdf ? (
+      ) : url && pdf && !jpeg ? (
         <iframe title={doc.title} src={url} className="pointer-events-none h-full w-full border-0 bg-neutral-950" />
       ) : url && image ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -458,6 +482,15 @@ export function DocumentReels() {
       { doc: feed[0], real: 0, key: `${feed[0].id}-tail`, loop: feed.length + 1 },
     ];
   }, [feed, looping]);
+
+  useEffect(() => {
+    if (!feed.length) return;
+    const nearbyDocs = [];
+    for (let offset = -1; offset <= 4; offset += 1) {
+      nearbyDocs.push(feed[(active + offset + feed.length) % feed.length]);
+    }
+    prefetchReelDocs(nearbyDocs);
+  }, [active, feed]);
 
   function jumpTo(loopIndex: number, smooth = false) {
     const root = scroller.current;

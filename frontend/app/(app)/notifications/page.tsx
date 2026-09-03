@@ -21,7 +21,18 @@ export default function NotificationsPage() {
     api<typeof items>("/notifications").then(setItems);
     api<Reminder[]>("/reminders").then(setReminders);
   }, []);
-  const upcoming = reminders.filter((row) => !row.sent_at && !row.cancelled);
+  const upcoming = reminders.filter((row) => {
+    if (row.sent_at || row.cancelled) return false;
+    const at = Date.parse(row.fire_at);
+    return Number.isNaN(at) || at >= Date.now() - 60_000;
+  });
+  const seen = new Set<string>();
+  const uniqueItems = items.filter((n) => {
+    const key = `${n.title}|${n.body}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-3xl">Notifications</h1>
@@ -37,7 +48,7 @@ export default function NotificationsPage() {
         </div>
       )}
       {items.length === 0 && upcoming.length === 0 && <p className="text-muted-foreground">You’re all caught up.</p>}
-      {items.map((n) => (
+      {uniqueItems.map((n) => (
         <div key={n.id} className="rounded-2xl border bg-card p-5">
           <h2 className="text-lg">{n.title}</h2>
           <p className="text-sm text-muted-foreground">{n.body}</p>

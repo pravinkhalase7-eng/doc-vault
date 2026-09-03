@@ -24,6 +24,7 @@ from app.models.enums import VerificationStatus
 from app.models.user import User
 from app.schemas.common import ConfirmMetadataRequest, DocumentMove, DocumentUpdate
 from app.storage.local import resolve_key
+from app.documents.ocr import generate_reel_images
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -212,6 +213,60 @@ async def preview(document_id: str, user: User = Depends(get_file_user), db: Asy
         media_type=doc.mime_type,
         headers={"Content-Disposition": f'inline; filename="{doc.original_filename}"'},
     )
+
+
+async def _ensure_reel_jpegs(db: AsyncSession, doc) -> None:
+    thumb_ok = bool(doc.thumbnail_key) and resolve_key(doc.thumbnail_key).exists()
+    preview_ok = bool(doc.preview_key) and resolve_key(doc.preview_key).exists()
+    if thumb_ok and preview_ok:
+        return
+    src = resolve_key(doc.storage_key)
+    if not src.exists():
+        return
+    thumb, preview = await generate_reel_images(src, doc.user_id, doc.id, doc.mime_type)
+    if thumb:
+        doc.thumbnail_key = thumb
+    if preview:
+        doc.preview_key = preview
+    await db.commit()
+    await db.refresh(doc)
+
+
+def _jpeg_response(path, filename: str):
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "private, max-age=86400",
+        },
+    )
+
+
+@router.get("/{document_id}/thumbnail")
+async def thumbnail(document_id: str, user: User = Depends(get_file_user), db: AsyncSession = Depends(get_db)):
+    doc = await get_document_for_user(db, user.id, document_id)
+    await _ensure_reel_jpegs(db, doc)
+    key = doc.thumbnail_key or doc.preview_key
+    if not key:
+        raise AppError("FILE_MISSING", "Preview is not available", 404)
+    path = resolve_key(key)
+    if not path.exists():
+        raise AppError("FILE_MISSING", "Preview is not available", 404)
+    return _jpeg_response(path, f"{doc.id}.jpg")
+
+
+@router.get("/{document_id}/reel-image")
+async def reel_image(document_id: str, user: User = Depends(get_file_user), db: AsyncSession = Depends(get_db)):
+    doc = await get_document_for_user(db, user.id, document_id)
+    await _ensure_reel_jpegs(db, doc)
+    key = doc.preview_key or doc.thumbnail_key
+    if not key:
+        raise AppError("FILE_MISSING", "Preview is not available", 404)
+    path = resolve_key(key)
+    if not path.exists():
+        raise AppError("FILE_MISSING", "Preview is not available", 404)
+    return _jpeg_response(path, f"{doc.id}-reel.jpg")
 
 
 @router.post("/{document_id}/confirm-metadata")
