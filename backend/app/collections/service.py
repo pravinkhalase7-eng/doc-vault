@@ -47,6 +47,70 @@ def serialize_collection(col: Collection, document_ids: list[str] | None = None)
     }
 
 
+async def find_owned_collection_by_name(
+    db: AsyncSession, user_id: str, name: str, parent_id: str | None = None
+) -> Collection | None:
+    needle = (name or "").strip().lower()
+    if not needle:
+        return None
+    rows = (await db.scalars(select(Collection).where(Collection.user_id == user_id))).all()
+    same_parent = [
+        col
+        for col in rows
+        if (col.parent_id or None) == (parent_id or None) and (col.name or "").strip().lower() == needle
+    ]
+    if same_parent:
+        return same_parent[0]
+    named = [col for col in rows if (col.name or "").strip().lower() == needle]
+    return named[0] if named else None
+
+
+def duplicate_name_groups(rows: list[Collection]) -> list[list[Collection]]:
+    groups: dict[str, list[Collection]] = {}
+    for col in rows:
+        key = (col.name or "").strip().lower()
+        if not key:
+            continue
+        groups.setdefault(key, []).append(col)
+    return [group for group in groups.values() if len(group) > 1]
+
+
+async def merge_same_name_collections(db: AsyncSession, user_id: str) -> None:
+    rows = (await db.scalars(select(Collection).where(Collection.user_id == user_id))).all()
+    groups = duplicate_name_groups(list(rows))
+    if not groups:
+        return
+    doc_map = await document_ids_for_collections(db, [col.id for col in rows])
+    for group in groups:
+        keep = max(
+            group,
+            key=lambda col: (
+                is_default_collection(col),
+                col.parent_id is None,
+                len(doc_map.get(col.id, [])),
+            ),
+        )
+        extras = [col for col in group if col.id != keep.id]
+        keep_docs = set(doc_map.get(keep.id, []))
+        for extra in extras:
+            for doc_id in doc_map.get(extra.id, []):
+                if doc_id in keep_docs:
+                    continue
+                db.add(CollectionDocument(collection_id=keep.id, document_id=doc_id))
+                keep_docs.add(doc_id)
+            children = (
+                await db.scalars(
+                    select(Collection).where(Collection.parent_id == extra.id, Collection.user_id == user_id)
+                )
+            ).all()
+            for child in children:
+                if child.id != keep.id:
+                    child.parent_id = keep.id
+            await db.delete(extra)
+        if extras:
+            await db.flush()
+
+
 async def owned_collection(db: AsyncSession, user_id: str, collection_id: str) -> Collection:
     col = await db.get(Collection, collection_id)
     if not col or col.user_id != user_id:
@@ -292,6 +356,7 @@ def serialize_tree_file(doc: Document) -> dict:
 
 
 async def collection_tree(db: AsyncSession, user_id: str) -> list[dict]:
+    await merge_same_name_collections(db, user_id)
     rows = (
         await db.scalars(select(Collection).where(Collection.user_id == user_id).order_by(Collection.name))
     ).all()

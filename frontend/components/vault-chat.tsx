@@ -138,7 +138,36 @@ type VaultCollection = {
   name: string;
   parent_id?: string | null;
   document_ids: string[];
+  shared?: boolean;
 };
+
+function collectionTreeFromList(cols: VaultCollection[], files: VaultDoc[] = []): CollectionNode[] {
+  const owned = cols.filter((col) => !col.shared);
+  const fileById = new Map(files.map((doc) => [doc.id, doc]));
+  const children = new Map<string | null, VaultCollection[]>();
+  for (const col of owned) {
+    const parent = col.parent_id || null;
+    children.set(parent, [...(children.get(parent) || []), col]);
+  }
+  function node(col: VaultCollection): CollectionNode {
+    return {
+      id: col.id,
+      name: col.name || "Untitled",
+      documents: (col.document_ids || [])
+        .map((id) => fileById.get(id))
+        .filter(Boolean)
+        .map((doc) => ({
+          id: doc!.id,
+          title: doc!.title,
+          original_filename: doc!.original_filename,
+          mime_type: doc!.mime_type,
+          size_bytes: doc!.size_bytes,
+        })),
+      children: (children.get(col.id) || []).map(node),
+    };
+  }
+  return (children.get(null) || []).map(node);
+}
 
 type UploadSource = "document" | "camera" | "gallery";
 type ChatMode = "chat" | "voice";
@@ -430,7 +459,7 @@ export function VaultChat() {
         method: "POST",
         body: JSON.stringify({ name }),
       });
-      setCollections((current) => [...current, created]);
+      setCollections((current) => (current.some((col) => col.id === created.id) ? current : [...current, created]));
       setNewCollectionName("");
       await pickCollection(created);
     } catch (err) {
@@ -505,6 +534,13 @@ export function VaultChat() {
         }),
       });
       setConversationId(note.conversation_id);
+      let tree: CollectionNode[] = [];
+      try {
+        const cols = await api<VaultCollection[]>("/collections");
+        tree = collectionTreeFromList(cols, uploaded);
+      } catch {
+        tree = [];
+      }
       setThread((t) => [
         ...t.map((item) =>
           item.id === userItem.id
@@ -516,6 +552,16 @@ export function VaultChat() {
           role: "assistant",
           content: assistantText,
           at: new Date().toISOString(),
+          chat: {
+            conversation_id: note.conversation_id,
+            message_id: note.assistant_message_id,
+            answer: assistantText,
+            evidence: [],
+            data_access: { collection_tree: tree },
+            external_ai: false,
+            model: "local",
+            collection_tree: tree,
+          },
         },
       ]);
       toast.success(`Saved to ${col.name}`);
@@ -1269,7 +1315,9 @@ export function VaultChat() {
                   No collections yet. Create one below, then pick the file.
                 </p>
               )}
-              {collections.map((col) => (
+              {collections
+                .filter((col) => !col.shared)
+                .map((col) => (
                 <button
                   key={col.id}
                   type="button"
@@ -1464,23 +1512,24 @@ function Bubble({
       pendingIds?.has(proposal.id),
   );
   return (
-    <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
+    <div className={cn("flex w-full", mine ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "rounded-2xl px-2.5 py-1.5 shadow-sm",
-          media ? "w-[min(100%,22rem)] max-w-[94%]" : "max-w-[86%]",
+          "inline-flex min-w-0 max-w-[82%] flex-col text-left text-[15px] leading-relaxed",
+          media ? "w-[min(100%,22rem)] px-2.5 pb-2 pt-2" : "w-fit px-3.5 py-2.5",
+          "rounded-[22px] shadow-sm",
           mine
-            ? "rounded-br-sm bg-accent text-accent-foreground"
-            : "rounded-bl-sm bg-card text-card-foreground",
+            ? "rounded-br-md bg-accent text-accent-foreground"
+            : "rounded-bl-md bg-card text-card-foreground",
         )}
       >
         {!saveNote && item.attachments?.length ? <MediaGrid items={item.attachments} /> : null}
         {item.content ? (
-          <p className="whitespace-pre-wrap px-0.5 text-[15px] leading-snug">{item.content}</p>
+          <p className="whitespace-pre-wrap break-words text-left">{item.content}</p>
         ) : null}
         {tree.length > 0 ? <CollectionExplorer nodes={tree} /> : null}
         {!tree.length && files.length ? <MediaGrid items={files} /> : null}
-        <div className="mt-0.5 flex items-center justify-end gap-1 px-0.5">
+        <div className="mt-1 flex items-center justify-end gap-1">
           {!mine && item.chat && (
             <span className="mr-auto text-[10px] text-muted-foreground">
               {item.chat.external_ai ? "Gemini" : "Private"}
@@ -1544,7 +1593,17 @@ function Bubble({
 }
 
 function CollectionExplorer({ nodes }: { nodes: CollectionNode[] }) {
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [open, setOpen] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    function walk(list: CollectionNode[]) {
+      for (const node of list) {
+        if ((node.documents || []).length > 0) initial.add(node.id);
+        walk(node.children || []);
+      }
+    }
+    walk(nodes);
+    return initial;
+  });
 
   function toggle(id: string) {
     setOpen((current) => {
@@ -1586,7 +1645,6 @@ function CollectionFolder({
   );
 
   useEffect(() => {
-    if (!expanded) return;
     let alive = true;
     api<Array<{ id: string; title: string; original_filename: string; mime_type?: string; size_bytes?: number }>>(
       `/collections/${node.id}/files`,
@@ -1607,7 +1665,7 @@ function CollectionFolder({
     return () => {
       alive = false;
     };
-  }, [expanded, node.id]);
+  }, [node.id]);
 
   return (
     <div>
@@ -1756,20 +1814,23 @@ function AuthThumb({
   useEffect(() => {
     let alive = true;
     let objectUrl = "";
-    apiBlob(`/documents/${id}/preview`)
-      .then((blob) => {
-        if (!alive) return;
-        const type = (blob.type || "").toLowerCase();
-        if (type.includes("pdf") || type.startsWith("text/") || type.includes("json")) {
-          setFailed(true);
+    const paths = [`/documents/${id}/thumbnail`, `/documents/${id}/reel-image`, `/documents/${id}/preview`];
+    (async () => {
+      for (const path of paths) {
+        try {
+          const blob = await apiBlob(path);
+          if (!alive) return;
+          const type = (blob.type || "").toLowerCase();
+          if (type.includes("pdf") || type.startsWith("text/") || type.includes("json")) continue;
+          objectUrl = URL.createObjectURL(blob);
+          setUrl(objectUrl);
           return;
+        } catch {
+          continue;
         }
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
-      })
-      .catch(() => {
-        if (alive) setFailed(true);
-      });
+      }
+      if (alive) setFailed(true);
+    })();
     return () => {
       alive = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);

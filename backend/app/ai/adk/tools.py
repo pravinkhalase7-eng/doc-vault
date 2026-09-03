@@ -128,6 +128,11 @@ class VaultTools:
         )
 
     async def create_collection(self, name: str, description: str = "", parent_id: str | None = None, ai_context: str = "") -> dict:
+        from app.collections.service import find_owned_collection_by_name
+
+        existing = await find_owned_collection_by_name(self.ctx.db, self.ctx.user.id, name, parent_id)
+        if existing:
+            return _ok({"id": existing.id, "name": existing.name, "requires_confirmation": False, "existing": True})
         col = Collection(
             user_id=self.ctx.user.id,
             name=name,

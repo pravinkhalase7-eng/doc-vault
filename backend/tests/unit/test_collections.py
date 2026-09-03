@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.collections.service import collection_matches_query, descendants_of, is_default_collection, would_cycle
+from app.collections.service import collection_matches_query, descendants_of, duplicate_name_groups, is_default_collection, would_cycle
 from app.search.query import lists_all_collections, query_terms
 
 
@@ -76,3 +76,12 @@ def test_is_default_collection_by_flag_or_name():
     assert is_default_collection(named)
     assert not is_default_collection(nested)
     assert not is_default_collection(other)
+
+
+def test_duplicate_name_groups_personal_folders():
+    root = SimpleNamespace(name="Personal", parent_id=None)
+    nested = SimpleNamespace(name="personal", parent_id="default-id")
+    other = SimpleNamespace(name="Work", parent_id=None)
+    groups = duplicate_name_groups([root, nested, other])
+    assert len(groups) == 1
+    assert {col.name for col in groups[0]} == {"Personal", "personal"}

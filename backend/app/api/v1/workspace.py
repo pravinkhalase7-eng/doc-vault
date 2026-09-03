@@ -10,7 +10,9 @@ from app.collections.service import (
     descendants_of,
     document_ids_for_collections,
     file_unfiled_into_default,
+    find_owned_collection_by_name,
     is_default_collection,
+    merge_same_name_collections,
     owned_collection,
     serialize_collection,
     serialize_tree_file,
@@ -167,6 +169,7 @@ async def list_collections(user: User = Depends(get_current_user), db: AsyncSess
     from app.family.service import owned_shared_collection_ids, shared_collection_payloads
 
     await file_unfiled_into_default(db, user.id)
+    await merge_same_name_collections(db, user.id)
     await db.commit()
     rows = (
         await db.scalars(select(Collection).where(Collection.user_id == user.id).order_by(Collection.name))
@@ -191,6 +194,21 @@ async def create_collection(
     payload: CollectionCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     await assert_valid_parent(db, user.id, None, payload.parent_id)
+    existing = await find_owned_collection_by_name(db, user.id, payload.name.strip(), payload.parent_id)
+    if existing:
+        for doc_id in payload.document_ids:
+            await get_document_for_user(db, user.id, doc_id)
+            linked = await db.scalar(
+                select(CollectionDocument).where(
+                    CollectionDocument.collection_id == existing.id,
+                    CollectionDocument.document_id == doc_id,
+                )
+            )
+            if not linked:
+                db.add(CollectionDocument(collection_id=existing.id, document_id=doc_id))
+        await db.commit()
+        docs = await document_ids_for_collections(db, [existing.id])
+        return ok(serialize_collection(existing, docs.get(existing.id, [])))
     col = Collection(
         user_id=user.id,
         name=payload.name.strip(),
