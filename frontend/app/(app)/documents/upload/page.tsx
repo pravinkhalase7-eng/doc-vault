@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { Camera, X } from "lucide-react";
 import { api, apiForm } from "@/lib/api";
 import { VAULT_FILE_ACCEPT } from "@/lib/file-accept";
 import { takeSharedFiles } from "@/lib/share-target";
@@ -128,12 +128,18 @@ function UploadForm() {
         <div>
           <h1 className="text-3xl">Add files</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {collectionName ? `Saves to ${collectionName}` : "Saves to Default"}
+            {collectionName ? `Saves to ${collectionName}` : "Saves to Default"}. Scan a page on your phone, or choose a file.
           </p>
         </div>
-        <Button type="button" className="rounded-full" onClick={open}>
-          Choose
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button type="button" variant="outline" className="rounded-full" onClick={() => router.push("/documents/scan")}>
+            <Camera className="size-4" />
+            Scan
+          </Button>
+          <Button type="button" className="rounded-full" onClick={open}>
+            Choose
+          </Button>
+        </div>
       </div>
 
       {collections.length > 0 && (

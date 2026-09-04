@@ -1,10 +1,16 @@
+import os
+import tempfile
+from datetime import date
+from pathlib import Path
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette.background import BackgroundTask
 
-from app.auth.service import get_current_user, get_file_user
+from app.auth.service import client_ip, get_current_user, get_file_user, log_security_event
 from app.database import get_db
 from app.documents.processing import process_document
 from app.collections.service import collections_for_documents, place_uploaded_document, move_document_to_collection
@@ -18,8 +24,9 @@ from app.documents.service import (
     serialize_document,
     trash_document,
 )
+from app.documents.export import unique_arcname, write_vault_zip
 from app.exceptions import AppError
-from app.models.document import DocumentMetadata
+from app.models.document import Document, DocumentMetadata
 from app.models.enums import VerificationStatus
 from app.models.user import User
 from app.schemas.common import ConfirmMetadataRequest, DocumentMove, DocumentUpdate
@@ -104,6 +111,69 @@ async def list_docs(
         offset=offset,
     )
     return ok({"items": [serialize_document(d) for d in rows], "total": total})
+
+
+@router.get("/export")
+async def export_vault(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    docs = (
+        await db.scalars(
+            select(Document)
+            .where(
+                Document.user_id == user.id,
+                Document.trashed_at.is_(None),
+                Document.deleted_at.is_(None),
+            )
+            .order_by(Document.title.asc(), Document.created_at.asc())
+        )
+    ).all()
+    if not docs:
+        raise AppError("VAULT_EMPTY", "Your vault has no files to download yet.", 400)
+    linked = await collections_for_documents(db, user.id, [doc.id for doc in docs])
+    used: set[str] = set()
+    entries = []
+    for doc in docs:
+        folder = (linked.get(doc.id) or [{}])[0].get("name") or "Unfiled"
+        arcname = unique_arcname(used, folder, doc.original_filename or f"{doc.title}.bin")
+        entries.append(
+            (
+                arcname,
+                resolve_key(doc.storage_key),
+                {
+                    "folder": folder,
+                    "title": doc.title or "",
+                    "filename": doc.original_filename or "",
+                    "mime_type": doc.mime_type or "",
+                    "bytes": str(doc.size_bytes or 0),
+                },
+            )
+        )
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    tmp.close()
+    zip_path = Path(tmp.name)
+    try:
+        count = write_vault_zip(zip_path, entries)
+    except Exception:
+        zip_path.unlink(missing_ok=True)
+        raise
+    if count == 0:
+        zip_path.unlink(missing_ok=True)
+        raise AppError("VAULT_EMPTY", "Your vault files could not be read from disk.", 404)
+    await log_security_event(
+        db,
+        "vault_export",
+        user_id=user.id,
+        ip=client_ip(request),
+        user_agent=request.headers.get("User-Agent"),
+        detail=str(count),
+    )
+    await db.commit()
+    filename = f"DocVault-export-{date.today().isoformat()}.zip"
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(os.unlink, str(zip_path)),
+    )
 
 
 @router.get("/{document_id}")

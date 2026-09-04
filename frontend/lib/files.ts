@@ -13,6 +13,18 @@ export async function downloadDocument(id: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+export async function downloadVault() {
+  const blob = await apiBlob("/documents/export");
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `DocVault-export-${new Date().toISOString().slice(0, 10)}.zip`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text);

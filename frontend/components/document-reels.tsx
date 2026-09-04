@@ -632,8 +632,8 @@ export function DocumentReels() {
           ))}
         </div>
         <Link
-          href="/documents/upload"
-          aria-label="Add a file"
+          href="/documents/scan"
+          aria-label="Scan a page"
           className="flex size-10 items-center justify-center rounded-full text-white"
         >
           <Camera className="size-5" />

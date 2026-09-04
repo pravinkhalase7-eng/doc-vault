@@ -49,7 +49,7 @@ export function HeaderActions({ className }: { className?: string }) {
       <IconBtn href="/search" label="Search">
         <Search className="size-5" />
       </IconBtn>
-      <IconBtn href="/documents/upload" label="Camera">
+      <IconBtn href="/documents/scan" label="Scan a page">
         <Camera className="size-5" />
       </IconBtn>
       <IconBtn href="/settings" label="Settings">
@@ -86,6 +86,9 @@ export function HeaderActions({ className }: { className?: string }) {
             Privacy
           </DropdownMenuItem>
           <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => router.push("/documents/scan")}>
+            Scan a page
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push("/documents/upload")}>
             New document
           </DropdownMenuItem>

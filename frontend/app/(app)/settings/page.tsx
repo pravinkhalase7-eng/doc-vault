@@ -3,16 +3,27 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, CalendarClock, ChevronRight, Clapperboard, Folders, HelpCircle, Hourglass, Lock, LogOut, MessageSquare, Moon, Phone, Share2, Shield, Sun, Trash2, UserRound, Users } from "lucide-react";
+import { Bell, CalendarClock, Camera, ChevronRight, Clapperboard, Download, Folders, HelpCircle, Hourglass, Lock, LogOut, MessageSquare, Moon, Phone, Share2, Shield, Sun, Trash2, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { api } from "@/lib/api";
+import { downloadVault } from "@/lib/files";
 import { useAuth } from "@/lib/auth";
 import { disablePush, enablePush, pushSupported } from "@/lib/push";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function initials(name?: string) {
   const parts = (name || "DV").trim().split(/\s+/);
@@ -208,6 +219,22 @@ export default function SettingsPage() {
   const { resolvedTheme, setTheme } = useTheme();
   const router = useRouter();
   const dark = resolvedTheme === "dark";
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  async function exportVault() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await downloadVault();
+      toast.success("Vault zip is downloading");
+      setExportOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not download your vault");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-lg space-y-4">
@@ -236,6 +263,14 @@ export default function SettingsPage() {
         <Row href="/expiring" icon={Hourglass} tone="bg-orange-500" label="Expiring soon" hint="Passports, insurance, licences" />
         <Row href="/trash" icon={Trash2} tone="bg-muted-foreground" label="Trash" hint="Restore files for 30 days" />
         <Row href="/collections" icon={Folders} tone="bg-amber-500" label="Collections" />
+        <Row href="/documents/scan" icon={Camera} tone="bg-primary" label="Scan a page" hint="Shoot, crop, save as PDF" />
+        <Row
+          icon={Download}
+          tone="bg-emerald-600"
+          label="Download my vault"
+          hint="Zip of every file, grouped by collection"
+          onClick={() => setExportOpen(true)}
+        />
       </Group>
 
       <PhoneCallForm />
@@ -279,6 +314,23 @@ export default function SettingsPage() {
         <LogOut className="size-4" />
         Sign out
       </button>
+
+      <AlertDialog open={exportOpen} onOpenChange={setExportOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Download your vault?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This saves a zip of every file still in your vault (not trash), grouped by collection. Keep it somewhere private.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={exporting} onClick={() => void exportVault()}>
+              {exporting ? "Preparing…" : "Download zip"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

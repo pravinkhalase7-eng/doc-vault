@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { downloadVault } from "@/lib/files";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -71,10 +72,24 @@ export default function PrivacyPage() {
           />
         </div>
       </div>
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <Link href="/privacy" className="rounded-full border px-4 py-2 text-sm">
           View AI Activity
         </Link>
+        <Button
+          variant="outline"
+          className="rounded-full"
+          onClick={async () => {
+            try {
+              await downloadVault();
+              toast.success("Vault zip is downloading");
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Could not download your vault");
+            }
+          }}
+        >
+          Download my vault
+        </Button>
         <Button
           variant="outline"
           className="rounded-full"
