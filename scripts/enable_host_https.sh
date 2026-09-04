@@ -80,6 +80,25 @@ certbot "${cert_args[@]}"
 nginx -t
 systemctl reload nginx
 
+# Browsers treat HTTP as "Not Secure". Keep HTTPS sticky after the first visit.
+if grep -q "listen 443" "$AVAILABLE" && ! grep -q Strict-Transport-Security "$AVAILABLE"; then
+  python3 - <<'PY'
+from pathlib import Path
+path = Path("/etc/nginx/sites-available/docvault")
+text = path.read_text()
+needle = "server_name docvault.doxstation.com;"
+hsts = '    add_header Strict-Transport-Security "max-age=31536000" always;\n'
+if "Strict-Transport-Security" not in text and needle in text:
+    # insert into the last server block (TLS) before the final closing brace
+    idx = text.rfind("server {")
+    if idx != -1:
+        close = text.rfind("}")
+        text = text[:close] + hsts + text[close:]
+        path.write_text(text)
+PY
+  nginx -t && systemctl reload nginx
+fi
+
 echo
 echo "HTTPS is ready: https://${DOMAIN}"
 echo "Keep http://127.0.0.1:8088 for Jenkins. Phones should use the https URL."
