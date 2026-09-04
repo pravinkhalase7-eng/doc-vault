@@ -28,11 +28,12 @@ from app.models.user import User
 VAULT_KINDS = (
     "ask_delete_collection",
     "ask_delete_document",
+    "delete_all_files",
     "delete_collection_files",
     "delete_collection",
     "delete_document",
 )
-EXECUTE_KINDS = ("delete_collection_files", "delete_collection", "delete_document")
+EXECUTE_KINDS = ("delete_all_files", "delete_collection_files", "delete_collection", "delete_document")
 ASK_KINDS = ("ask_delete_collection", "ask_delete_document")
 
 CONFIRM_PHRASES = {
@@ -98,18 +99,35 @@ def parse_vault_intent(message: str) -> ParsedIntent:
     if lowered in CANCEL_PHRASES:
         return ParsedIntent("cancel")
 
+    if (
+        re.fullmatch(
+            r"(?:please\s+)?(?:delete|remove)\s+all(?:\s+of)?(?:\s+the)?(?:\s+my)?\s+"
+            r"(?:files|documents|docs)(?:\s+(?:in|from|inside)\s+(?:the\s+|my\s+)?vault)?",
+            lowered,
+        )
+        or re.fullmatch(r"(?:please\s+)?(?:delete|remove)\s+(?:everything|all)", lowered)
+        or re.fullmatch(r"(?:please\s+)?(?:empty|clear)\s+(?:the\s+|my\s+)?vault", lowered)
+    ):
+        return ParsedIntent("delete_all_files")
+
     match = re.search(
         r"(?:delete|remove)\s+all\s+(?:the\s+)?(?:files|documents|docs)\s+(?:in|from|inside|under)\s+(.+)",
         lowered,
     )
     if match:
-        return ParsedIntent("delete_collection_files", clean_name(match.group(1)))
+        name = clean_name(match.group(1))
+        if not name or name.lower() in {"vault", "my vault", "the vault"}:
+            return ParsedIntent("delete_all_files")
+        return ParsedIntent("delete_collection_files", name)
     match = re.search(
         r"(?:delete|remove)\s+all\s+(.+?)\s+(?:files|documents|docs)\b",
         lowered,
     )
     if match:
-        return ParsedIntent("delete_collection_files", clean_name(match.group(1)))
+        name = clean_name(match.group(1))
+        if not name or name.lower() in {"my", "the", "all", "every", "everything", "vault"}:
+            return ParsedIntent("delete_all_files")
+        return ParsedIntent("delete_collection_files", name)
 
     match = re.search(
         r"(?:delete|remove)\s+(?:the\s+)?(?:collection|folder)(?:\s+(?:named|called))?(?:\s+(.+))?",
@@ -292,6 +310,8 @@ async def handle_vault_action(
         return await _list_vault_documents(db, user)
     if intent.kind == "show_document":
         return await _show_named_document(db, user, intent.name)
+    if intent.kind == "delete_all_files":
+        return await _start_delete_all_files(db, user, conversation_id)
     if intent.kind == "delete_collection_files":
         return await _start_delete_collection_files(db, user, intent.name, conversation_id)
     if intent.kind == "delete_collection":
@@ -330,7 +350,7 @@ async def execute_vault_proposal(db: AsyncSession, user: User, proposal: AIPropo
     if proposal.status != "pending":
         return "That action was already handled."
     payload = proposal.payload or {}
-    if proposal.kind == "delete_collection_files":
+    if proposal.kind in {"delete_all_files", "delete_collection_files"}:
         ids = [item for item in (payload.get("document_ids") or []) if item]
         deleted = 0
         for doc_id in ids:
@@ -341,6 +361,11 @@ async def execute_vault_proposal(db: AsyncSession, user: User, proposal: AIPropo
                 continue
         proposal.status = "approved"
         await db.flush()
+        if proposal.kind == "delete_all_files":
+            if deleted == 0:
+                return "There were no files left to delete."
+            label = "file" if deleted == 1 else "files"
+            return f"Deleted {deleted} {label} from your vault. They’re in trash for 30 days."
         name = payload.get("collection_name") or "that collection"
         if deleted == 0:
             return f"There were no files left to delete in {name}."
@@ -462,6 +487,33 @@ async def _show_named_document(db: AsyncSession, user: User, name: str | None) -
         "answer": f'I found {len(matched)} files matching "{name}". Tap one to open it.',
         "docs": matched[:12],
     }
+
+
+async def _start_delete_all_files(db: AsyncSession, user: User, conversation_id: str) -> dict:
+    docs, _ = await list_documents(db, user.id, limit=500)
+    visible = [doc for doc in docs if not doc.trashed_at]
+    if not visible:
+        return {"answer": "You don't have any files to delete."}
+    titles = [doc.title or doc.original_filename for doc in visible]
+    summary = f"Delete all {len(visible)} files in your vault?"
+    proposal = await _create_proposal(
+        db,
+        user,
+        "delete_all_files",
+        {
+            "conversation_id": conversation_id,
+            "document_ids": [doc.id for doc in visible],
+            "titles": titles,
+            "summary": summary,
+        },
+    )
+    preview = _bullet(titles[:12])
+    extra = f"\n…and {len(titles) - 12} more." if len(titles) > 12 else ""
+    answer = (
+        f"I'll move all {len(visible)} file{'s' if len(visible) != 1 else ''} in your vault to trash:\n"
+        f"{preview}{extra}\n\nTap Confirm to delete them, or Cancel. You can restore from trash for 30 days."
+    )
+    return {"answer": answer, "proposal": _proposal_view(proposal, summary)}
 
 
 async def _start_delete_collection_files(

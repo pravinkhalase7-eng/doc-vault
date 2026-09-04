@@ -241,7 +241,12 @@ function proposalFromAccess(access: Record<string, unknown> | undefined): ChatPr
 }
 
 function isConfirmableProposal(kind?: string) {
-  return kind === "delete_collection_files" || kind === "delete_collection" || kind === "delete_document";
+  return (
+    kind === "delete_all_files" ||
+    kind === "delete_collection_files" ||
+    kind === "delete_collection" ||
+    kind === "delete_document"
+  );
 }
 
 function isClearCommand(text: string) {

@@ -7,6 +7,21 @@ from app.ai.vault_actions import (
 )
 
 
+def test_parse_delete_all_files_means_whole_vault():
+    for phrase in (
+        "delete all files",
+        "delete all my files",
+        "delete all the files",
+        "delete all documents",
+        "delete everything",
+        "empty the vault",
+        "delete all",
+    ):
+        intent = parse_vault_intent(phrase)
+        assert intent.kind == "delete_all_files", phrase
+        assert intent.name is None
+
+
 def test_parse_delete_all_personal_files():
     intent = parse_vault_intent("delete all personal files")
     assert intent.kind == "delete_collection_files"
