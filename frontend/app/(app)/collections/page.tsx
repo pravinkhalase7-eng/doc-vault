@@ -18,10 +18,12 @@ import {
   Users,
 } from "lucide-react";
 import { FileActions } from "@/components/file-actions";
+import { DocumentThumb } from "@/components/document-thumb";
 import { FolderGlyph } from "@/components/folder-glyph";
 import { moveDocumentToCollection } from "@/components/move-collection-sheet";
 import { api } from "@/lib/api";
 import { fileKind } from "@/lib/file-kind";
+import { fileTimestamps } from "@/lib/file-time";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +70,8 @@ type Doc = {
   title: string;
   original_filename: string;
   mime_type?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 function displayName(col: Collection) {
@@ -530,61 +534,78 @@ function FolderContents({
           )}
         </div>
       ) : (
-        <ul>
-          {folders.map((folder) => (
-            <li key={folder.id} className="border-b last:border-b-0">
-              <button
-                type="button"
-                onClick={() => onOpen(folder.id)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/50"
-              >
-                <FolderGlyph size="sm" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-medium">{displayName(folder)}</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {countLabel(liveCount(folder, docs), childrenOf(folder.id).length)}
-                  </span>
-                </span>
-                <ChevronRight className="size-4 text-muted-foreground" />
-              </button>
-            </li>
-          ))}
-          {files.map((doc) => {
-            const kind = fileKind(doc);
-            const Icon = kind.icon;
-            return (
-              <li key={doc.id} className="border-b last:border-b-0">
-                <div className="flex items-center gap-3 px-4 py-2.5">
-                  <Link href={`/documents/${doc.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-                    <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl", kind.tone)}>
-                      <Icon className="size-4" />
-                    </span>
+        <>
+          {folders.length > 0 && (
+            <ul>
+              {folders.map((folder) => (
+                <li key={folder.id} className="border-b last:border-b-0">
+                  <button
+                    type="button"
+                    onClick={() => onOpen(folder.id)}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/50"
+                  >
+                    <FolderGlyph size="sm" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-medium">{doc.title}</span>
-                      <span className="block text-xs text-muted-foreground">{kind.label}</span>
+                      <span className="block truncate text-[15px] font-medium">{displayName(folder)}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {countLabel(liveCount(folder, docs), childrenOf(folder.id).length)}
+                      </span>
                     </span>
-                  </Link>
-                  <FileActions
-                    id={doc.id}
-                    title={doc.title}
-                    filename={doc.original_filename}
-                    currentCollectionId={col.id}
-                    onMoved={onChanged}
-                  />
-                  {!col.is_default && editable && (
-                    <button
-                      type="button"
-                      className="text-xs text-muted-foreground"
-                      onClick={() => removeDoc(doc.id)}
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                    <ChevronRight className="size-4 text-muted-foreground" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {files.length > 0 && (
+            <div className={cn("grid grid-cols-2 gap-3 p-3 sm:grid-cols-3", folders.length > 0 && "border-t")}>
+              {files.map((doc) => {
+                const kind = fileKind(doc);
+                const when = fileTimestamps(doc.created_at, doc.updated_at);
+                return (
+                  <div key={doc.id} className="overflow-hidden rounded-2xl bg-muted/40">
+                    <Link href={`/documents/${doc.id}`} className="block">
+                      <span className="relative block aspect-[3/4] overflow-hidden bg-muted">
+                        <DocumentThumb
+                          id={doc.id}
+                          title={doc.title}
+                          mimeType={doc.mime_type}
+                          filename={doc.original_filename}
+                          className="size-full"
+                        />
+                      </span>
+                      <span className="block space-y-0.5 px-2.5 pt-2.5">
+                        <span className="block truncate text-sm font-medium">{doc.title}</span>
+                        <span className="block text-[11px] leading-snug text-muted-foreground">
+                          {kind.label}
+                          {when ? ` · ${when}` : ""}
+                        </span>
+                      </span>
+                    </Link>
+                    <div className="flex items-center justify-between px-1 pb-1">
+                      <FileActions
+                        id={doc.id}
+                        title={doc.title}
+                        filename={doc.original_filename}
+                        currentCollectionId={col.id}
+                        onMoved={onChanged}
+                      />
+                      {!col.is_default && editable && (
+                        <button
+                          type="button"
+                          className="px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                          onClick={() => removeDoc(doc.id)}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
       {adding && editable ? (
         <div className="space-y-2 border-t p-3">

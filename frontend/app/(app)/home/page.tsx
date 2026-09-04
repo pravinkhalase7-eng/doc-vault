@@ -81,7 +81,7 @@ function formatAdded(iso?: string) {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function StorageRing({ used, percent }: { used: number; percent: number }) {
@@ -176,7 +176,7 @@ export default function HomePage() {
             label="Photos"
             value={docs?.images ?? 0}
             hint={docs?.pdfs ? `${docs.pdfs} PDFs` : "Images saved"}
-            href="/documents"
+            href="/documents?kind=photo"
           />
           <StatTile
             label="Unfiled"
@@ -330,9 +330,9 @@ export default function HomePage() {
               <h2 className="text-lg font-semibold">What’s stored</h2>
             </div>
             <div className="divide-y divide-border/70">
-              <TypeRow icon={ImageIcon} tone="bg-primary/10 text-primary" label="Photos" value={docs?.images ?? 0} />
-              <TypeRow icon={FileText} tone="bg-muted text-foreground" label="PDFs" value={docs?.pdfs ?? 0} />
-              <TypeRow icon={FileText} tone="bg-muted text-muted-foreground" label="Other" value={docs?.other ?? 0} />
+              <TypeRow href="/documents?kind=photo" icon={ImageIcon} tone="bg-primary/10 text-primary" label="Photos" value={docs?.images ?? 0} />
+              <TypeRow href="/documents?kind=pdf" icon={FileText} tone="bg-muted text-foreground" label="PDFs" value={docs?.pdfs ?? 0} />
+              <TypeRow href="/documents?kind=other" icon={FileText} tone="bg-muted text-muted-foreground" label="Other" value={docs?.other ?? 0} />
             </div>
             <p className="px-1 pt-3 text-xs text-muted-foreground">
               {(dash?.activity?.downloads || 0) + (dash?.activity?.shares || 0) > 0
@@ -417,23 +417,26 @@ function StatTile({
 }
 
 function TypeRow({
+  href,
   icon: Icon,
   tone,
   label,
   value,
 }: {
+  href: string;
   icon: typeof FileText;
   tone: string;
   label: string;
   value: number;
 }) {
   return (
-    <div className="flex items-center gap-3 py-2.5">
+    <Link href={href} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0 hover:opacity-90">
       <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl", tone)}>
         <Icon className="size-4" />
       </span>
       <span className="min-w-0 flex-1 text-[15px] font-medium">{label}</span>
       <span className="text-xs text-muted-foreground">{value === 0 ? "None" : value}</span>
-    </div>
+      <ChevronRight className="size-4 text-muted-foreground" />
+    </Link>
   );
 }

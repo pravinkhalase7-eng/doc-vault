@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { downloadDocument, isShareCancel, shareDocument } from "@/lib/files";
+import { fileTimestamps, formatFileTime } from "@/lib/file-time";
 import { MoveCollectionSheet } from "@/components/move-collection-sheet";
 import {
   Sheet,
@@ -50,6 +51,8 @@ type Doc = {
   ai_classification?: string | null;
   expiry_date?: string | null;
   trashed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
   collections?: CollectionRef[];
 };
 
@@ -162,6 +165,7 @@ export default function DocumentDetailPage() {
   const meta = [
     doc.ai_classification,
     doc.expiry_date ? `expires ${doc.expiry_date}` : null,
+    fileTimestamps(doc.created_at, doc.updated_at) || null,
     inCollections.map((col) => col.name).filter(Boolean).join(" · ") || null,
   ].filter(Boolean);
 
@@ -291,6 +295,14 @@ export default function DocumentDetailPage() {
               <p className="break-all text-sm">{doc.original_filename}</p>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Added</p>
+                <p>{formatFileTime(doc.created_at) || "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Edited</p>
+                <p>{formatFileTime(doc.updated_at) || "—"}</p>
+              </div>
               <div>
                 <p className="text-xs text-muted-foreground">Status</p>
                 <p>{doc.status}</p>
