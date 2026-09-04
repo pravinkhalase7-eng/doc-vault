@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -10,9 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthScreen } from "@/components/auth-screen";
+import { GoogleSignIn } from "@/components/google-sign-in";
 
 export default function LoginPage() {
-  const { login, guestLogin } = useAuth();
+  const { login, guestLogin, googleLogin } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState(GUEST_EMAIL);
   const [password, setPassword] = useState(GUEST_PASSWORD);
@@ -27,6 +28,26 @@ export default function LoginPage() {
       return;
     }
     router.push(user.onboarding_completed ? "/home" : "/onboarding");
+  }
+
+  useEffect(() => {
+    const err = new URLSearchParams(window.location.search).get("error");
+    if (err === "google_not_configured") toast.error("Google sign-in is not set up on this server yet.");
+    else if (err === "google_denied") toast.error("Google sign-in was cancelled.");
+    else if (err === "google_guest") toast.error("The guest vault cannot be linked to Google. Create your own vault.");
+    else if (err === "google") toast.error("Google sign-in did not complete. Try again.");
+  }, []);
+
+  async function onGoogleToken(idToken: string) {
+    setLoading(true);
+    try {
+      const user = await googleLogin({ id_token: idToken });
+      afterLogin(user);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not sign in with Google");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -64,6 +85,7 @@ export default function LoginPage() {
         <h1 className="mt-2 text-3xl font-bold tracking-tight">Welcome back</h1>
         <p className="mt-1 text-sm text-muted-foreground">Guest credentials are prefilled so you can enter immediately.</p>
         <div className="mt-8 space-y-4">
+          <GoogleSignIn disabled={loading} onIdToken={onGoogleToken} />
           <div>
             <Label htmlFor="email">Email</Label>
             <Input

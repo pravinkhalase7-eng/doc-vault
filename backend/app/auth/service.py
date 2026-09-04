@@ -170,7 +170,15 @@ async def authenticate(
         .options(selectinload(User.preferences))
         .where(User.email == email.lower(), User.deleted_at.is_(None))
     )
-    if not user or not user.is_active or not verify_password(password, user.password_hash):
+    if not user or not user.is_active:
+        await log_security_event(db, "login_failed", ip=ip, user_agent=user_agent, success=False, detail=email.lower())
+        await db.commit()
+        raise UnauthorizedError("INVALID_CREDENTIALS", "Invalid email or password")
+    if not user.password_hash:
+        await log_security_event(db, "login_failed", ip=ip, user_agent=user_agent, success=False, detail="google_only")
+        await db.commit()
+        raise UnauthorizedError("GOOGLE_ONLY", "This vault uses Google. Tap Continue with Google.")
+    if not verify_password(password, user.password_hash):
         await log_security_event(db, "login_failed", ip=ip, user_agent=user_agent, success=False, detail=email.lower())
         await db.commit()
         raise UnauthorizedError("INVALID_CREDENTIALS", "Invalid email or password")

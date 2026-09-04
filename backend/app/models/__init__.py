@@ -19,6 +19,7 @@ from app.models.sharing import Share, ShareLink, ShareLinkEvent
 from app.models.system import BackupRecord, SecureLink, SecurityEvent, StorageUsage
 from app.models.user import (
     EmailVerificationToken,
+    LoginTicket,
     PasswordResetToken,
     User,
     UserPreference,
@@ -32,6 +33,7 @@ __all__ = [
     "UserPreference",
     "UserSession",
     "EmailVerificationToken",
+    "LoginTicket",
     "PasswordResetToken",
     "Category",
     "DocumentType",

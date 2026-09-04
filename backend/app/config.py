@@ -79,7 +79,10 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""
     vapid_mailto: str = "mailto:docvault@localhost"
 
-    @field_validator("gemini_api_key", mode="before")
+    google_client_id: str = ""
+    google_client_secret: str = ""
+
+    @field_validator("gemini_api_key", "google_client_id", "google_client_secret", mode="before")
     @classmethod
     def empty_key(cls, value: str | None) -> str:
         return value or ""
@@ -107,6 +110,10 @@ class Settings(BaseSettings):
     @property
     def vapid_configured(self) -> bool:
         return bool(self.vapid_private_key and self.vapid_public_key)
+
+    @property
+    def google_configured(self) -> bool:
+        return bool(self.google_client_id)
 
 
 @lru_cache

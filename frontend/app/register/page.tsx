@@ -9,9 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthScreen } from "@/components/auth-screen";
+import { GoogleSignIn } from "@/components/google-sign-in";
 
 export default function RegisterPage() {
-  const { register, login, guestLogin } = useAuth();
+  const { register, login, guestLogin, googleLogin } = useAuth();
   const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -42,6 +43,20 @@ export default function RegisterPage() {
         <p className="font-mono text-[11px] tracking-[0.28em] text-[var(--mint)]">PRIVATE BY DESIGN</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight">Create your secure vault</h1>
         <div className="mt-8 space-y-4">
+          <GoogleSignIn
+            disabled={loading}
+            onIdToken={async (idToken) => {
+              setLoading(true);
+              try {
+                const user = await googleLogin({ id_token: idToken });
+                router.push(user.onboarding_completed ? "/home" : "/onboarding");
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not sign in with Google");
+              } finally {
+                setLoading(false);
+              }
+            }}
+          />
           <div>
             <Label htmlFor="fullName">Full name</Label>
             <Input

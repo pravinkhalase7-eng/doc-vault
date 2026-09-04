@@ -26,6 +26,7 @@ _SECRET_KEYS = {
     "twilio_auth_token",
     "twilio_account_sid",
     "vapid_private_key",
+    "google_client_secret",
 }
 
 _REDACT = re.compile(r"(password|token|secret|api[_-]?key)\s*[:=]\s*\S+", re.I)

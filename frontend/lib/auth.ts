@@ -49,6 +49,7 @@ type AuthState = {
   login: (email: string, password: string, totp?: string) => Promise<User>;
   register: (fullName: string, email: string, password: string) => Promise<void>;
   guestLogin: () => Promise<User>;
+  googleLogin: (payload: { ticket?: string; id_token?: string }) => Promise<User>;
   logout: () => void;
 };
 
@@ -82,6 +83,16 @@ export const useAuth = create<AuthState>((set) => ({
     const data = await api<{ access_token: string; refresh_token: string; user: User }>(
       "/auth/guest",
       { method: "POST", body: JSON.stringify({}) },
+    );
+    setTokens(data.access_token, data.refresh_token);
+    const me = await api<User>("/users/me");
+    set({ user: me, loading: false });
+    return me;
+  },
+  googleLogin: async (payload) => {
+    const data = await api<{ access_token: string; refresh_token: string; user: User }>(
+      "/auth/google",
+      { method: "POST", body: JSON.stringify(payload) },
     );
     setTokens(data.access_token, data.refresh_token);
     const me = await api<User>("/users/me");

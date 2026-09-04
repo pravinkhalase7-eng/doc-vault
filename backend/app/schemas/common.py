@@ -38,6 +38,11 @@ class LoginRequest(APIModel):
     totp_code: str | None = None
 
 
+class GoogleAuthRequest(APIModel):
+    id_token: str | None = None
+    ticket: str | None = None
+
+
 class RefreshRequest(APIModel):
     refresh_token: str
 
