@@ -399,6 +399,9 @@ Or leave a copy at /var/jenkins_home/doc-vault.env on the Jenkins host.''')
             docker logs docvault-web --tail=40 || true
             docker logs docvault-nginx --tail=40 || true
           fi
+
+          echo "=== Install host nginx from git ==="
+          bash scripts/install_host_nginx.sh || echo "WARN: could not update /etc/nginx/sites-available/docvault from git"
         '''
       }
     }
@@ -408,9 +411,7 @@ Or leave a copy at /var/jenkins_home/doc-vault.env on the Jenkins host.''')
     success {
       echo "DocVault ${params.DEPLOY_ENV} build #${env.BUILD_NUMBER} succeeded"
       echo "HTTP UI: host port WEB_HOST_PORT (8088)"
-      echo "HTTPS: add DNS A ${params.PUBLIC_HOST} -> this VPS, then on the host run:"
-      echo "  sudo PUBLIC_HOST=${params.PUBLIC_HOST} bash scripts/enable_host_https.sh"
-      echo "Then open https://${params.PUBLIC_HOST} (needed for lock-screen push and Android Share)"
+      echo "HTTPS: https://${params.PUBLIC_HOST} (host nginx is copied from deploy/host-nginx-docvault.conf)"
     }
     failure {
       echo "DocVault build #${env.BUILD_NUMBER} failed — check stage logs"
