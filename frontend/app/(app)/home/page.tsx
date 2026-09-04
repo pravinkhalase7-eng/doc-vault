@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { FolderGlyph } from "@/components/folder-glyph";
 import { fileKind } from "@/lib/file-kind";
 import { cn } from "@/lib/utils";
+import { isUpcomingReminder, type ReminderRow } from "@/lib/reminders";
 
 type FolderStat = { id: string; name: string; file_count: number; child_count: number };
 type RecentFile = {
@@ -95,6 +96,7 @@ function StorageRing({ used, percent }: { used: number; percent: number }) {
 export default function HomePage() {
   const { user } = useAuth();
   const [dash, setDash] = useState<Dashboard | null>(null);
+  const [upcoming, setUpcoming] = useState<ReminderRow[]>([]);
   const hour = new Date().getHours();
   const hello = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const folders = dash?.collections.folders || [];
@@ -103,6 +105,9 @@ export default function HomePage() {
 
   useEffect(() => {
     api<Dashboard>("/dashboard").then(setDash).catch(() => setDash(null));
+    api<ReminderRow[]>("/reminders")
+      .then((rows) => setUpcoming((rows || []).filter(isUpcomingReminder).slice(0, 4)))
+      .catch(() => setUpcoming([]));
   }, []);
 
   return (
@@ -161,6 +166,33 @@ export default function HomePage() {
           />
         </div>
       </div>
+
+      {upcoming.length > 0 && (
+        <Card className="rounded-2xl">
+          <CardContent className="space-y-3 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Schedule</p>
+                <h2 className="text-lg font-semibold">Upcoming</h2>
+              </div>
+              <Link href="/appointments" className="text-sm text-primary">
+                See all
+              </Link>
+            </div>
+            <div className="divide-y divide-border/70">
+              {upcoming.map((row) => (
+                <Link key={row.id} href="/appointments" className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{row.title}</span>
+                    <span className="block text-xs text-muted-foreground">{row.when_label || row.fire_at}</span>
+                  </span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="rounded-2xl">

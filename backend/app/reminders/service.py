@@ -34,6 +34,7 @@ def reminder_view(row: Reminder) -> dict[str, Any]:
         "channel": row.channel,
         "kind": extra.get("kind") or "reminder",
         "when_label": extra.get("when_label") or format_local(row.fire_at, tz),
+        "appointment_at": extra.get("appointment_at"),
         "phone_masked": mask_phone(extra.get("phone_number")),
         "needs_phone": bool(extra.get("needs_phone")),
         "cancelled": bool(extra.get("cancelled")),

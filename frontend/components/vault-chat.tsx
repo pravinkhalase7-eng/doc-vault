@@ -959,6 +959,7 @@ export function VaultChat() {
           <DropdownMenuContent align="end" className="min-w-44">
             <DropdownMenuItem onClick={newChat}>New chat</DropdownMenuItem>
             <DropdownMenuItem onClick={clearChat}>Clear chat</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/appointments")}>Appointments</DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/reels")}>Reels</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => router.push("/settings")}>

@@ -23,7 +23,8 @@ from app.models.collection import Collection, CollectionDocument, Reminder, Task
 from app.models.document import Document
 from app.models.enums import DocumentStatus, TaskStatus
 from app.models.user import User
-from app.reminders.service import reminder_view
+from app.exceptions import NotFoundError
+from app.reminders.service import cancel_reminder, reminder_view
 from app.schemas.common import CollectionCreate, CollectionUpdate, ReminderCreate, TaskCreate
 from datetime import UTC, datetime, timedelta
 
@@ -337,7 +338,9 @@ async def remove_from_collection(
 
 @router.get("/reminders")
 async def list_reminders(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    rows = (await db.scalars(select(Reminder).where(Reminder.user_id == user.id))).all()
+    rows = (
+        await db.scalars(select(Reminder).where(Reminder.user_id == user.id).order_by(Reminder.fire_at.asc()))
+    ).all()
     return ok([reminder_view(r) for r in rows])
 
 
@@ -358,6 +361,19 @@ async def create_reminder(
     await db.commit()
     await db.refresh(reminder)
     return ok({"id": reminder.id, "fire_at": reminder.fire_at})
+
+
+@router.delete("/reminders/{reminder_id}")
+async def delete_reminder(
+    reminder_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    reminder = await db.get(Reminder, reminder_id)
+    if not reminder or reminder.user_id != user.id:
+        raise NotFoundError("REMINDER_NOT_FOUND", "Reminder not found")
+    await cancel_reminder(reminder)
+    await db.commit()
+    await db.refresh(reminder)
+    return ok(reminder_view(reminder))
 
 
 @router.get("/tasks")

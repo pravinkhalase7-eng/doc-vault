@@ -1,31 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
-
-type Reminder = {
-  id: string;
-  title: string;
-  when_label?: string;
-  fire_at: string;
-  sent_at: string | null;
-  cancelled?: boolean;
-  channel?: string;
-  kind?: string;
-};
+import { isUpcomingReminder, type ReminderRow } from "@/lib/reminders";
 
 export default function NotificationsPage() {
   const [items, setItems] = useState<Array<{ id: string; title: string; body: string; created_at: string }>>([]);
-  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [reminders, setReminders] = useState<ReminderRow[]>([]);
   useEffect(() => {
     api<typeof items>("/notifications").then(setItems);
-    api<Reminder[]>("/reminders").then(setReminders);
+    api<ReminderRow[]>("/reminders").then(setReminders);
   }, []);
-  const upcoming = reminders.filter((row) => {
-    if (row.sent_at || row.cancelled) return false;
-    const at = Date.parse(row.fire_at);
-    return Number.isNaN(at) || at >= Date.now() - 60_000;
-  });
+  const upcoming = reminders.filter(isUpcomingReminder);
   const seen = new Set<string>();
   const uniqueItems = items.filter((n) => {
     const key = `${n.title}|${n.body}`;
@@ -38,12 +25,17 @@ export default function NotificationsPage() {
       <h1 className="text-3xl">Notifications</h1>
       {upcoming.length > 0 && (
         <div className="space-y-2">
-          <h2 className="text-sm text-muted-foreground">Upcoming calls</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm text-muted-foreground">Upcoming</h2>
+            <Link href="/appointments" className="text-sm text-primary">
+              Manage
+            </Link>
+          </div>
           {upcoming.map((row) => (
-            <div key={row.id} className="rounded-2xl border bg-card p-5">
+            <Link key={row.id} href="/appointments" className="block rounded-2xl border bg-card p-5">
               <h2 className="text-lg">{row.title}</h2>
               <p className="text-sm text-muted-foreground">{row.when_label || row.fire_at}</p>
-            </div>
+            </Link>
           ))}
         </div>
       )}
