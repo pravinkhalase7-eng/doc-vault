@@ -125,18 +125,23 @@ pipeline {
 
           if (!usedEnv) {
             sh '''
-              echo "=== Looking for Jenkins-host fallback env files ==="
-              ls -la /var/jenkins_home/doc-vault.env /var/jenkins_home/secrets/doc-vault.env 2>/dev/null || true
+              echo "=== Looking for fallback env files ==="
+              ls -la doc-vault.env.example doc-vault.env /var/jenkins_home/doc-vault.env /var/jenkins_home/secrets/doc-vault.env 2>/dev/null || true
             '''
             def candidates = [
               '/var/jenkins_home/secrets/doc-vault.env',
               '/var/jenkins_home/doc-vault.env',
+              'doc-vault.env',
+              'doc-vault.env.example',
             ]
             for (p in candidates) {
               if (fileExists(p)) {
                 sh "cp -f '${p}' .env.deploy"
                 usedEnv = true
                 echo "Using env file: ${p} → .env.deploy"
+                if (p.endsWith('.example')) {
+                  echo "WARN: using repo example env. For Twilio and real secrets, upload a Secret file ID doc-vault-env-file."
+                }
                 break
               }
             }
@@ -144,12 +149,12 @@ pipeline {
 
           if (!usedEnv) {
             error('''No env source found.
-Upload doc-vault.env as a Jenkins credential:
+Jenkins → Manage Jenkins → Credentials → Global → Add Credentials:
   Kind: Secret file
   ID: doc-vault-env-file
-  Scope: Global
-Leave USE_ENV_CREDENTIAL=true, then rebuild.
-doc-vault.env is gitignored and is not in the repo.''')
+  File: your local doc-vault.env (copy from doc-vault.env.example)
+Rebuild with USE_ENV_CREDENTIAL checked.
+Or leave a copy at /var/jenkins_home/doc-vault.env on the Jenkins host.''')
           }
 
           sh '''
