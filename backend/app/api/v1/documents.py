@@ -12,7 +12,7 @@ from starlette.background import BackgroundTask
 
 from app.auth.service import client_ip, get_current_user, get_file_user, log_security_event
 from app.database import get_db
-from app.documents.processing import process_document
+from app.documents.processing import enqueue_document_processing
 from app.collections.service import collections_for_documents, place_uploaded_document, move_document_to_collection
 from app.documents.service import (
     create_upload,
@@ -41,25 +41,7 @@ def ok(data):
 
 
 async def _enqueue_processing(document_id: str) -> None:
-    if _celery_has_workers():
-        from app.workers.tasks import process_document_task
-
-        process_document_task.delay(document_id)
-        return
-    from app.database import SessionLocal
-
-    async with SessionLocal() as db:
-        await process_document(db, document_id)
-
-
-def _celery_has_workers() -> bool:
-    try:
-        from app.workers.celery_app import celery_app
-
-        pinged = celery_app.control.inspect(timeout=0.4).ping()
-        return bool(pinged)
-    except Exception:
-        return False
+    await enqueue_document_processing(document_id)
 
 
 @router.post("/upload")

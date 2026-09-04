@@ -33,6 +33,14 @@ export default function PrivacyPolicyPage() {
         </p>
       </section>
       <section>
+        <h2 className="text-2xl">Email ingest</h2>
+        <p className="text-muted-foreground">
+          If you forward a file to your private DocVault address, the attachment is stored on this VPS like any other
+          upload. The message still travels through your mail provider first. Treat that address like a password and
+          rotate it in Settings if it leaks.
+        </p>
+      </section>
+      <section>
         <h2 className="text-2xl">How data is deleted</h2>
         <p className="text-muted-foreground">
           Documents go to trash for 30 days. You can delete AI data (embeddings, chats, evidence) without deleting

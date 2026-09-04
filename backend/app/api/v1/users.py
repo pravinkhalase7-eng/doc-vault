@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.service import get_current_user
 from app.database import get_db
+from app.email.ingest_service import ingest_status, rotate_ingest_token
 from app.exceptions import AppError
 from app.models.enums import AIPrivacyMode, LanguageCode
 from app.models.user import User
@@ -91,3 +92,14 @@ async def onboarding(
     user.onboarding_completed = True
     await db.commit()
     return ok({"onboarding_completed": True})
+
+
+@router.get("/me/ingest")
+async def email_ingest(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return ok(await ingest_status(db, user))
+
+
+@router.post("/me/ingest/rotate")
+async def rotate_email_ingest(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await rotate_ingest_token(db, user)
+    return ok(await ingest_status(db, user))

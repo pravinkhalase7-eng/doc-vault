@@ -53,6 +53,7 @@ class UserPreference(BaseModel):
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Kolkata")
     phone_number: Mapped[str | None] = mapped_column(String(32))
     notification_push: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    email_ingest_token: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
 
     user: Mapped[User] = relationship(back_populates="preferences")
 

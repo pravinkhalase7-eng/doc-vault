@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, CalendarClock, Camera, ChevronRight, Clapperboard, Download, Folders, HelpCircle, Hourglass, Lock, LogOut, MessageSquare, Moon, Phone, Share2, Shield, Sun, Trash2, UserRound, Users } from "lucide-react";
+import { Bell, CalendarClock, Camera, ChevronRight, Clapperboard, Copy, Download, Folders, HelpCircle, Hourglass, Lock, LogOut, Mail, MessageSquare, Moon, Phone, Share2, Shield, Sun, Trash2, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { api } from "@/lib/api";
@@ -210,6 +210,113 @@ function ShareIntoVaultHint() {
   );
 }
 
+type IngestInfo = {
+  address: string;
+  domain: string;
+  receiving: boolean;
+  hint: string;
+};
+
+function EmailIngestForm() {
+  const [info, setInfo] = useState<IngestInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [rotateOpen, setRotateOpen] = useState(false);
+  const [rotating, setRotating] = useState(false);
+
+  async function loadIngest() {
+    try {
+      const data = await api<IngestInfo>("/users/me/ingest");
+      setInfo(data);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not load your ingest address");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadIngest();
+  }, []);
+
+  async function copyAddress() {
+    if (!info?.address) return;
+    try {
+      await navigator.clipboard.writeText(info.address);
+      toast.success("Copied the vault email address");
+    } catch {
+      toast.message("Your vault email", { description: info.address });
+    }
+  }
+
+  async function rotate() {
+    if (rotating) return;
+    setRotating(true);
+    try {
+      const data = await api<IngestInfo>("/users/me/ingest/rotate", { method: "POST" });
+      setInfo(data);
+      setRotateOpen(false);
+      toast.success("Old address no longer works. Copy the new one.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not rotate the address");
+    } finally {
+      setRotating(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-2xl bg-card px-4 py-4">
+      <div className="flex items-center gap-3">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-white">
+          <Mail className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px]">Email into vault</p>
+          <p className="text-xs text-muted-foreground">
+            Forward a PDF to this address. Put the collection in the subject — Insurance, Bills — or it goes to Default.
+          </p>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <Input
+          readOnly
+          value={loading ? "Loading…" : info?.address || ""}
+          className="h-11 rounded-xl bg-background px-3 font-mono text-xs"
+        />
+        <Button type="button" variant="outline" className="h-11 shrink-0 rounded-xl px-3" onClick={() => void copyAddress()} disabled={!info?.address}>
+          <Copy className="size-4" />
+        </Button>
+      </div>
+      {info && !info.receiving ? (
+        <p className="text-xs text-muted-foreground">
+          Mail is not delivered yet. The server needs INBOUND_EMAIL_DOMAIN and INBOUND_WEBHOOK_SECRET, then a catch-all
+          that POSTs to /api/v1/ingest/email.
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">{info?.hint}</p>
+      )}
+      <Button type="button" variant="outline" className="w-full rounded-xl" onClick={() => setRotateOpen(true)} disabled={!info}>
+        Rotate address
+      </Button>
+      <AlertDialog open={rotateOpen} onOpenChange={setRotateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rotate this address?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The current address stops working. Update any Gmail filters that forward here.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={rotating} onClick={() => void rotate()}>
+              {rotating ? "Rotating…" : "Rotate"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 function Group({ children }: { children: React.ReactNode }) {
   return <div className="overflow-hidden rounded-2xl bg-card">{children}</div>;
 }
@@ -274,6 +381,8 @@ export default function SettingsPage() {
       </Group>
 
       <PhoneCallForm />
+
+      <EmailIngestForm />
 
       <PushAlertsForm />
 

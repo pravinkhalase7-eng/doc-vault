@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
 
+    # Inbound email ingest (forward a PDF to a private address).
+    # Example domain: in.docvault.doxstation.com  Address: {token}@{domain}
+    inbound_email_domain: str = ""
+    inbound_webhook_secret: str = ""
+
     @field_validator("gemini_api_key", "google_client_id", "google_client_secret", mode="before")
     @classmethod
     def empty_key(cls, value: str | None) -> str:
@@ -114,6 +119,22 @@ class Settings(BaseSettings):
     @property
     def google_configured(self) -> bool:
         return bool(self.google_client_id)
+
+    @property
+    def inbound_mail_domain(self) -> str:
+        configured = (self.inbound_email_domain or "").strip().lower().lstrip("@")
+        if configured:
+            return configured
+        host = (self.app_url or "").split("://")[-1].split("/")[0].split(":")[0].strip().lower()
+        if host in {"localhost", "127.0.0.1", ""}:
+            return "in.docvault.local"
+        if host.startswith("in."):
+            return host
+        return f"in.{host}"
+
+    @property
+    def inbound_webhook_enabled(self) -> bool:
+        return bool((self.inbound_webhook_secret or "").strip())
 
 
 @lru_cache

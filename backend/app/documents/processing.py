@@ -237,3 +237,21 @@ async def process_document(db: AsyncSession, document_id: str) -> None:
             doc.status = DocumentStatus.FAILED
             doc.processing_error = "Processing failed"
             await db.commit()
+
+
+async def enqueue_document_processing(document_id: str) -> None:
+    try:
+        from app.workers.celery_app import celery_app
+
+        pinged = celery_app.control.inspect(timeout=0.4).ping()
+        if pinged:
+            from app.workers.tasks import process_document_task
+
+            process_document_task.delay(document_id)
+            return
+    except Exception:
+        pass
+    from app.database import SessionLocal
+
+    async with SessionLocal() as db:
+        await process_document(db, document_id)
