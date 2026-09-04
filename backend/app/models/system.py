@@ -52,3 +52,13 @@ class SecureLink(BaseModel):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     one_time: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class InboundMailReceipt(BaseModel):
+    __tablename__ = "inbound_mail_receipts"
+
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    sender: Mapped[str] = mapped_column(String(320), nullable=False)
+    user_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="accepted")
+    detail: Mapped[str | None] = mapped_column(String(200))

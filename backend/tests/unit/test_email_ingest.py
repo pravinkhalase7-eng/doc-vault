@@ -3,10 +3,12 @@ from types import SimpleNamespace
 from app.email.ingest import (
     InboundAttachment,
     ingest_secret_ok,
+    is_shared_inbox_recipient,
     keep_attachment,
     match_collection_for_ingest,
     normalize_subject,
     parse_ingest_recipient,
+    sender_email,
     split_local_part,
 )
 
@@ -72,3 +74,11 @@ def test_keep_attachment_skips_tiny_inline_and_signatures():
     assert keep_attachment(winmail) is False
     pdf = InboundAttachment("policy.pdf", b"%PDF-1.4\n" + b"1" * 80)
     assert keep_attachment(pdf) is True
+
+
+def test_shared_inbox_recipient_and_sender():
+    inbox = "support@doxstation.com"
+    assert is_shared_inbox_recipient("support@doxstation.com", inbox)
+    assert is_shared_inbox_recipient("DocVault <support+bills@doxstation.com>", inbox)
+    assert not is_shared_inbox_recipient("dvabc@in.docvault.doxstation.com", inbox)
+    assert sender_email("Pravin <pravin@gmail.com>") == "pravin@gmail.com"

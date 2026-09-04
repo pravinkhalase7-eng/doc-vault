@@ -17,6 +17,7 @@ LIMITS = {
     "/api/v1/documents/upload": (30, 60),
     "/api/v1/documents/export": (3, 300),
     "/api/v1/ingest/email": (30, 300),
+    "/api/v1/ingest/poll": (6, 60),
     "/api/v1/ai/chat": (20, 60),
 }
 

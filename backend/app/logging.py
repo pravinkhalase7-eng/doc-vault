@@ -28,6 +28,7 @@ _SECRET_KEYS = {
     "vapid_private_key",
     "google_client_secret",
     "inbound_webhook_secret",
+    "imap_password",
 }
 
 _REDACT = re.compile(r"(password|token|secret|api[_-]?key)\s*[:=]\s*\S+", re.I)

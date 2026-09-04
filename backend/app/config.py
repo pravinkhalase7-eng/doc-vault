@@ -87,6 +87,13 @@ class Settings(BaseSettings):
     inbound_email_domain: str = ""
     inbound_webhook_secret: str = ""
 
+    # Shared Hostinger inbox (e.g. support@doxstation.com). Poll IMAP and map by From.
+    imap_host: str = ""
+    imap_port: int = 993
+    imap_username: str = ""
+    imap_password: str = ""
+    imap_folder: str = "INBOX"
+
     @field_validator("gemini_api_key", "google_client_id", "google_client_secret", mode="before")
     @classmethod
     def empty_key(cls, value: str | None) -> str:
@@ -135,6 +142,22 @@ class Settings(BaseSettings):
     @property
     def inbound_webhook_enabled(self) -> bool:
         return bool((self.inbound_webhook_secret or "").strip())
+
+    @property
+    def imap_user(self) -> str:
+        return (self.imap_username or "").strip() or (self.smtp_username or "").strip()
+
+    @property
+    def imap_pass(self) -> str:
+        return (self.imap_password or "").strip() or (self.smtp_password or "").strip()
+
+    @property
+    def imap_configured(self) -> bool:
+        return bool((self.imap_host or "").strip() and self.imap_user and self.imap_pass)
+
+    @property
+    def shared_inbox_address(self) -> str:
+        return (self.imap_user or "support@doxstation.com").strip().lower()
 
 
 @lru_cache

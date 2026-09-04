@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import re
 from dataclasses import dataclass, field
 from email import policy
@@ -12,7 +13,7 @@ from secrets import compare_digest, token_hex
 
 from app.config import get_settings
 from app.exceptions import AppError
-from app.storage.local import detect_type
+from app.storage.local import detect_type, sha256_bytes
 
 FWD_PREFIX = re.compile(r"^(re|fw|fwd)\s*:\s*", re.I)
 SKIP_NAMES = {
@@ -89,6 +90,39 @@ def parse_ingest_recipient(value: str) -> tuple[str | None, str | None, str | No
         if token:
             return token, plus, domain
     return None, None, None
+
+
+def sender_email(value: str) -> str | None:
+    addrs = extract_addresses(value)
+    return addrs[0] if addrs else None
+
+
+def is_shared_inbox_recipient(recipient: str, shared_inbox: str) -> bool:
+    shared = (shared_inbox or "").strip().lower()
+    if not shared or "@" not in shared:
+        return False
+    shared_local, shared_domain = shared.rsplit("@", 1)
+    shared_local = shared_local.split("+", 1)[0]
+    for addr in extract_addresses(recipient) or [recipient.strip().lower()]:
+        token, _plus, domain = parse_ingest_recipient(addr)
+        if token == shared_local and (domain or "") == shared_domain:
+            return True
+    return False
+
+
+def mail_fingerprint(mail: InboundMail) -> str:
+    mid = (mail.message_id or "").strip()
+    if mid:
+        return hashlib.sha256(mid.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256()
+    digest.update((mail.sender or "").encode("utf-8"))
+    digest.update(b"\n")
+    digest.update((mail.subject or "").encode("utf-8"))
+    for att in mail.attachments:
+        digest.update(b"\n")
+        digest.update((att.filename or "").encode("utf-8"))
+        digest.update(sha256_bytes(att.data).encode("utf-8"))
+    return digest.hexdigest()
 
 
 def ingest_secret_ok(provided: str | None, expected: str | None) -> bool:

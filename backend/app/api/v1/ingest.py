@@ -94,3 +94,21 @@ async def inbound_email(
     for doc_id in result.pop("process_ids", []) or []:
         background.add_task(enqueue_document_processing, doc_id)
     return ok(result)
+
+
+@router.post("/poll")
+async def poll_shared_mailbox(
+    request: Request,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    if not ingest_secret_ok(_provided_secret(request), settings.inbound_webhook_secret):
+        raise UnauthorizedError("INGEST_UNAUTHORIZED", "Invalid ingest secret")
+    if not settings.imap_configured:
+        raise AppError("IMAP_DISABLED", "Shared inbox IMAP is not configured", 503)
+    from app.email.imap_ingest import poll_shared_inbox
+
+    result = await poll_shared_inbox(db)
+    for doc_id in result.pop("process_ids", []) or []:
+        background.add_task(enqueue_document_processing, doc_id)
+    return ok(result)

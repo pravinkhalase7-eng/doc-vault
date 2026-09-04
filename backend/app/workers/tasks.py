@@ -136,3 +136,20 @@ def fire_due_reminder_calls() -> int:
             return len(rows)
 
     return asyncio.run(_inner())
+
+
+@celery_app.task(name="app.workers.tasks.poll_shared_inbox")
+def poll_shared_inbox() -> dict:
+    async def _inner() -> dict:
+        if not settings.imap_configured:
+            return {"skipped": True, "reason": "IMAP_DISABLED", "processed": 0}
+        from app.documents.processing import enqueue_document_processing
+        from app.email.imap_ingest import poll_shared_inbox as poll
+
+        async with SessionLocal() as db:
+            result = await poll(db)
+            for doc_id in result.pop("process_ids", []) or []:
+                await enqueue_document_processing(doc_id)
+            return result
+
+    return asyncio.run(_inner())

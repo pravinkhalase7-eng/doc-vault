@@ -15,18 +15,26 @@ from app.email.ingest import (
     MAX_ATTACHMENTS,
     generate_ingest_token,
     ingest_address_for,
+    is_shared_inbox_recipient,
     keep_attachment,
+    mail_fingerprint,
     match_collection_for_ingest,
     parse_ingest_recipient,
+    sender_email,
 )
 from app.email.notification_service import notify
 from app.exceptions import AppError
 from app.logging import get_logger
 from app.models.collection import Collection
+from app.models.system import InboundMailReceipt
 from app.models.user import User, UserPreference
 
 log = get_logger("email.ingest")
 settings = get_settings()
+
+
+def _empty_result(reason: str) -> dict:
+    return {"accepted": False, "reason": reason, "documents": [], "process_ids": []}
 
 
 async def ensure_ingest_token(db: AsyncSession, user: User) -> str:
@@ -58,11 +66,18 @@ async def rotate_ingest_token(db: AsyncSession, user: User) -> str:
 
 async def ingest_status(db: AsyncSession, user: User) -> dict:
     token = await ensure_ingest_token(db, user)
+    shared = settings.shared_inbox_address
     return {
         "address": ingest_address_for(token),
         "domain": settings.inbound_mail_domain,
         "receiving": settings.inbound_webhook_enabled,
-        "hint": "Put the collection name in the subject — Insurance, Bills — or it goes to Default.",
+        "shared_inbox": shared,
+        "shared_inbox_enabled": settings.imap_configured,
+        "login_email": user.email,
+        "hint": (
+            f"Send a PDF from {user.email} to {shared}. "
+            "Put the collection name in the subject — Insurance, Bills — or it goes to Default."
+        ),
     }
 
 
@@ -82,22 +97,60 @@ async def user_for_ingest_token(db: AsyncSession, token: str) -> User | None:
     )
 
 
-async def ingest_inbound_mail(
+async def user_for_sender_email(db: AsyncSession, sender: str) -> User | None:
+    email = sender_email(sender)
+    if not email:
+        return None
+    if email == settings.shared_inbox_address:
+        return None
+    if email == (settings.guest_email or "").strip().lower():
+        return None
+    return await db.scalar(
+        select(User)
+        .options(selectinload(User.preferences))
+        .where(User.email == email, User.is_active.is_(True), User.deleted_at.is_(None))
+    )
+
+
+async def _already_ingested(db: AsyncSession, fingerprint: str) -> bool:
+    found = await db.scalar(select(InboundMailReceipt.id).where(InboundMailReceipt.fingerprint == fingerprint))
+    return bool(found)
+
+
+async def _record_receipt(
     db: AsyncSession,
+    *,
+    fingerprint: str,
+    sender: str,
+    user_id: str | None,
+    status: str,
+    detail: str | None = None,
+) -> None:
+    existing = await db.scalar(select(InboundMailReceipt).where(InboundMailReceipt.fingerprint == fingerprint))
+    if existing:
+        return
+    db.add(
+        InboundMailReceipt(
+            fingerprint=fingerprint,
+            sender=(sender or "")[:320],
+            user_id=user_id,
+            status=status,
+            detail=(detail or "")[:200] or None,
+        )
+    )
+    await db.commit()
+
+
+async def ingest_mail_for_user(
+    db: AsyncSession,
+    user: User,
     mail: InboundMail,
     *,
+    plus_tag: str | None = None,
     ip: str | None = None,
 ) -> dict:
-    token, plus, _domain = parse_ingest_recipient(mail.recipient)
-    if not token:
-        return {"accepted": False, "reason": "NO_MAILBOX", "documents": [], "process_ids": []}
-    user = await user_for_ingest_token(db, token)
-    if not user:
-        log.info("ingest_unknown_mailbox")
-        return {"accepted": False, "reason": "UNKNOWN_MAILBOX", "documents": [], "process_ids": []}
-
     rows = (await db.scalars(select(Collection).where(Collection.user_id == user.id))).all()
-    matched = match_collection_for_ingest(list(rows), subject=mail.subject, plus_tag=plus)
+    matched = match_collection_for_ingest(list(rows), subject=mail.subject, plus_tag=plus_tag)
     target_id = matched.id if matched else None
     folder = (matched.name if matched else None) or "Default"
 
@@ -162,3 +215,74 @@ async def ingest_inbound_mail(
         "documents": uploaded,
         "process_ids": process_ids,
     }
+
+
+async def ingest_inbound_mail(
+    db: AsyncSession,
+    mail: InboundMail,
+    *,
+    ip: str | None = None,
+) -> dict:
+    fingerprint = mail_fingerprint(mail)
+    if await _already_ingested(db, fingerprint):
+        return {**_empty_result("DUPLICATE"), "accepted": True, "reason": "DUPLICATE"}
+
+    token, plus, _domain = parse_ingest_recipient(mail.recipient)
+    shared = settings.shared_inbox_address
+    if is_shared_inbox_recipient(mail.recipient, shared):
+        user = await user_for_sender_email(db, mail.sender)
+        if not user:
+            log.info("ingest_unknown_sender")
+            await _record_receipt(
+                db,
+                fingerprint=fingerprint,
+                sender=sender_email(mail.sender) or mail.sender,
+                user_id=None,
+                status="ignored",
+                detail="UNKNOWN_SENDER",
+            )
+            return _empty_result("UNKNOWN_SENDER")
+        result = await ingest_mail_for_user(db, user, mail, plus_tag=plus, ip=ip)
+        await _record_receipt(
+            db,
+            fingerprint=fingerprint,
+            sender=user.email,
+            user_id=user.id,
+            status="accepted" if result.get("documents") else "empty",
+            detail=result.get("collection"),
+        )
+        return result
+
+    if not token:
+        await _record_receipt(
+            db,
+            fingerprint=fingerprint,
+            sender=sender_email(mail.sender) or "",
+            user_id=None,
+            status="ignored",
+            detail="NO_MAILBOX",
+        )
+        return _empty_result("NO_MAILBOX")
+    user = await user_for_ingest_token(db, token)
+    if not user:
+        log.info("ingest_unknown_mailbox")
+        await _record_receipt(
+            db,
+            fingerprint=fingerprint,
+            sender=sender_email(mail.sender) or "",
+            user_id=None,
+            status="ignored",
+            detail="UNKNOWN_MAILBOX",
+        )
+        return _empty_result("UNKNOWN_MAILBOX")
+
+    result = await ingest_mail_for_user(db, user, mail, plus_tag=plus, ip=ip)
+    await _record_receipt(
+        db,
+        fingerprint=fingerprint,
+        sender=user.email,
+        user_id=user.id,
+        status="accepted" if result.get("documents") else "empty",
+        detail=result.get("collection"),
+    )
+    return result

@@ -35,9 +35,9 @@ export default function PrivacyPolicyPage() {
       <section>
         <h2 className="text-2xl">Email ingest</h2>
         <p className="text-muted-foreground">
-          If you forward a file to your private DocVault address, the attachment is stored on this VPS like any other
-          upload. The message still travels through your mail provider first. Treat that address like a password and
-          rotate it in Settings if it leaks.
+          If you email a file to the shared inbox (for example support@doxstation.com) from the same address you use
+          to sign in, DocVault stores the attachment in that vault. Anyone who can send as your address could add
+          files this way. You can also use a private backup address from Settings.
         </p>
       </section>
       <section>

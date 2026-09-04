@@ -215,6 +215,9 @@ type IngestInfo = {
   domain: string;
   receiving: boolean;
   hint: string;
+  shared_inbox?: string;
+  shared_inbox_enabled?: boolean;
+  login_email?: string;
 };
 
 function EmailIngestForm() {
@@ -238,13 +241,12 @@ function EmailIngestForm() {
     void loadIngest();
   }, []);
 
-  async function copyAddress() {
-    if (!info?.address) return;
+  async function copyText(value: string, ok: string) {
     try {
-      await navigator.clipboard.writeText(info.address);
-      toast.success("Copied the vault email address");
+      await navigator.clipboard.writeText(value);
+      toast.success(ok);
     } catch {
-      toast.message("Your vault email", { description: info.address });
+      toast.message(ok, { description: value });
     }
   }
 
@@ -255,13 +257,16 @@ function EmailIngestForm() {
       const data = await api<IngestInfo>("/users/me/ingest/rotate", { method: "POST" });
       setInfo(data);
       setRotateOpen(false);
-      toast.success("Old address no longer works. Copy the new one.");
+      toast.success("Old private address no longer works. Copy the new one.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not rotate the address");
     } finally {
       setRotating(false);
     }
   }
+
+  const shared = info?.shared_inbox || "support@doxstation.com";
+  const loginEmail = info?.login_email;
 
   return (
     <div className="space-y-3 rounded-2xl bg-card px-4 py-4">
@@ -272,37 +277,57 @@ function EmailIngestForm() {
         <div className="min-w-0 flex-1">
           <p className="text-[15px]">Email into vault</p>
           <p className="text-xs text-muted-foreground">
-            Forward a PDF to this address. Put the collection in the subject — Insurance, Bills — or it goes to Default.
+            Send a PDF from {loginEmail || "your DocVault email"} to {shared}. Put the collection in the subject —
+            Insurance, Bills — or it goes to Default.
           </p>
         </div>
       </div>
+      <div className="flex gap-2">
+        <Input readOnly value={loading ? "Loading…" : shared} className="h-11 rounded-xl bg-background px-3 font-mono text-xs" />
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 shrink-0 rounded-xl px-3"
+          onClick={() => void copyText(shared, "Copied support inbox")}
+          disabled={loading}
+        >
+          <Copy className="size-4" />
+        </Button>
+      </div>
+      {info && !info.shared_inbox_enabled ? (
+        <p className="text-xs text-muted-foreground">
+          The server is not polling this mailbox yet. Add Hostinger IMAP settings (IMAP_HOST, IMAP_USERNAME,
+          IMAP_PASSWORD) so mail to {shared} is picked up.
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">{info?.hint}</p>
+      )}
+      <p className="text-xs text-muted-foreground">Private backup address (anyone with it can add files):</p>
       <div className="flex gap-2">
         <Input
           readOnly
           value={loading ? "Loading…" : info?.address || ""}
           className="h-11 rounded-xl bg-background px-3 font-mono text-xs"
         />
-        <Button type="button" variant="outline" className="h-11 shrink-0 rounded-xl px-3" onClick={() => void copyAddress()} disabled={!info?.address}>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 shrink-0 rounded-xl px-3"
+          onClick={() => info?.address && void copyText(info.address, "Copied private address")}
+          disabled={!info?.address}
+        >
           <Copy className="size-4" />
         </Button>
       </div>
-      {info && !info.receiving ? (
-        <p className="text-xs text-muted-foreground">
-          Mail is not delivered yet. The server needs INBOUND_EMAIL_DOMAIN and INBOUND_WEBHOOK_SECRET, then a catch-all
-          that POSTs to /api/v1/ingest/email.
-        </p>
-      ) : (
-        <p className="text-xs text-muted-foreground">{info?.hint}</p>
-      )}
       <Button type="button" variant="outline" className="w-full rounded-xl" onClick={() => setRotateOpen(true)} disabled={!info}>
-        Rotate address
+        Rotate private address
       </Button>
       <AlertDialog open={rotateOpen} onOpenChange={setRotateOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Rotate this address?</AlertDialogTitle>
+            <AlertDialogTitle>Rotate the private address?</AlertDialogTitle>
             <AlertDialogDescription>
-              The current address stops working. Update any Gmail filters that forward here.
+              Only the backup dv… address changes. Sending to {shared} from your login email still works.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

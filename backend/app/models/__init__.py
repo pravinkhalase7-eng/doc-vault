@@ -16,7 +16,7 @@ from app.models.notification import EmailLog, Notification
 from app.models.push import PushSubscription
 from app.models.family import Family, FamilyCollectionShare, FamilyMember
 from app.models.sharing import Share, ShareLink, ShareLinkEvent
-from app.models.system import BackupRecord, SecureLink, SecurityEvent, StorageUsage
+from app.models.system import BackupRecord, InboundMailReceipt, SecureLink, SecurityEvent, StorageUsage
 from app.models.user import (
     EmailVerificationToken,
     LoginTicket,
@@ -68,4 +68,5 @@ __all__ = [
     "StorageUsage",
     "BackupRecord",
     "SecureLink",
+    "InboundMailReceipt",
 ]
