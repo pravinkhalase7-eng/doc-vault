@@ -87,13 +87,21 @@ async def list_docs(
     q: str | None = None,
     category_id: str | None = None,
     trash: bool = False,
+    expiring_days: int | None = Query(None, ge=1, le=3650),
     limit: int = 50,
     offset: int = 0,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     rows, total = await list_documents(
-        db, user.id, q=q, category_id=category_id, trash=trash, limit=limit, offset=offset
+        db,
+        user.id,
+        q=q,
+        category_id=category_id,
+        trash=trash,
+        expiring_days=expiring_days,
+        limit=limit,
+        offset=offset,
     )
     return ok({"items": [serialize_document(d) for d in rows], "total": total})
 

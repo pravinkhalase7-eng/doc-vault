@@ -73,6 +73,12 @@ export function HeaderActions({ className }: { className?: string }) {
           <DropdownMenuItem onClick={() => router.push("/appointments")}>
             Appointments
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/expiring")}>
+            Expiring soon
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/trash")}>
+            Trash
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push("/collections")}>
             Collections
           </DropdownMenuItem>

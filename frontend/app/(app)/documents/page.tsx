@@ -89,6 +89,9 @@ export default function DocumentsPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Everything in your vault, with the files you download or share most at the top.
           </p>
+          <Link href="/trash" className="mt-1 inline-block text-xs text-muted-foreground hover:text-foreground">
+            Open trash
+          </Link>
         </div>
         <Link
           href="/documents/upload"

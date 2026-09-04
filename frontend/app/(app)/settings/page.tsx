@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, CalendarClock, ChevronRight, Clapperboard, Folders, HelpCircle, Lock, LogOut, MessageSquare, Moon, Phone, Share2, Shield, Sun, UserRound, Users } from "lucide-react";
+import { Bell, CalendarClock, ChevronRight, Clapperboard, Folders, HelpCircle, Hourglass, Lock, LogOut, MessageSquare, Moon, Phone, Share2, Shield, Sun, Trash2, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { api } from "@/lib/api";
@@ -233,6 +233,8 @@ export default function SettingsPage() {
         <Row href="/family" icon={Users} tone="bg-amber-500" label="Family" hint="Invite members and share folders" />
         <Row href="/notifications" icon={Bell} tone="bg-primary" label="Notifications" />
         <Row href="/appointments" icon={CalendarClock} tone="bg-emerald-600" label="Appointments" hint="Upcoming visits and reminders" />
+        <Row href="/expiring" icon={Hourglass} tone="bg-orange-500" label="Expiring soon" hint="Passports, insurance, licences" />
+        <Row href="/trash" icon={Trash2} tone="bg-muted-foreground" label="Trash" hint="Restore files for 30 days" />
         <Row href="/collections" icon={Folders} tone="bg-amber-500" label="Collections" />
       </Group>
 

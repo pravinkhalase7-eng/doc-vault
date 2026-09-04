@@ -6,6 +6,7 @@ export type ReminderRow = {
   cancelled?: boolean;
   kind?: string;
   when_label?: string;
+  document_id?: string | null;
 };
 
 export function isUpcomingReminder(row: ReminderRow) {

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.service import get_current_user
@@ -26,7 +26,8 @@ from app.models.user import User
 from app.exceptions import NotFoundError
 from app.reminders.service import cancel_reminder, reminder_view
 from app.schemas.common import CollectionCreate, CollectionUpdate, ReminderCreate, TaskCreate
-from datetime import UTC, datetime, timedelta
+from app.services.health_score import compute_health
+from datetime import UTC, date, datetime, timedelta
 
 router = APIRouter(tags=["workspace"])
 
@@ -136,6 +137,24 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
         usage.file_count = total
         await db.commit()
     used_percent = min(100.0, (used * 100 / quota) if quota else 0)
+    today = date.today()
+    health = await compute_health(db, user.id)
+    expiring_items = sorted(
+        (doc for doc in file_rows if doc.expiry_date and (doc.expiry_date - today).days <= 30),
+        key=lambda doc: doc.expiry_date or today,
+    )
+    trash_count = (
+        await db.scalar(
+            select(func.count())
+            .select_from(Document)
+            .where(
+                Document.user_id == user.id,
+                Document.trashed_at.is_not(None),
+                Document.deleted_at.is_(None),
+            )
+        )
+        or 0
+    )
     return ok(
         {
             "storage": {
@@ -161,6 +180,22 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
                 "total": len(cols),
                 "folders": folders,
             },
+            "health": health,
+            "expiring": {
+                "soon": health.get("expiring_soon") or 0,
+                "expired": health.get("expired") or 0,
+                "items": [
+                    {
+                        "id": doc.id,
+                        "title": doc.title,
+                        "original_filename": doc.original_filename,
+                        "mime_type": doc.mime_type,
+                        "expiry_date": doc.expiry_date.isoformat() if doc.expiry_date else None,
+                    }
+                    for doc in expiring_items[:5]
+                ],
+            },
+            "trash_count": int(trash_count),
         }
     )
 

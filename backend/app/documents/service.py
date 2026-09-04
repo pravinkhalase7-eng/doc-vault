@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -245,6 +245,7 @@ async def list_documents(
     category_id: str | None = None,
     status: str | None = None,
     trash: bool = False,
+    expiring_days: int | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[Document], int]:
@@ -263,6 +264,10 @@ async def list_documents(
         filters.append(Document.category_id == category_id)
     if status:
         filters.append(Document.status == status)
+    if expiring_days is not None and not trash:
+        cutoff = date.today() + timedelta(days=expiring_days)
+        filters.append(Document.expiry_date.is_not(None))
+        filters.append(Document.expiry_date <= cutoff)
     if q:
         like = f"%{q}%"
         filters.append(
@@ -276,16 +281,22 @@ async def list_documents(
             )
         )
     total = await db.scalar(select(func.count()).select_from(Document).where(*filters)) or 0
+    if trash:
+        order = (Document.trashed_at.desc(), Document.title.asc())
+    elif expiring_days is not None:
+        order = (Document.expiry_date.asc(), Document.title.asc())
+    else:
+        order = (
+            (Document.download_count + Document.share_count).desc(),
+            Document.updated_at.desc(),
+            Document.created_at.desc(),
+        )
     rows = (
         await db.scalars(
             select(Document)
             .options(selectinload(Document.tags).selectinload(DocumentTag.tag))
             .where(*filters)
-            .order_by(
-                (Document.download_count + Document.share_count).desc(),
-                Document.updated_at.desc(),
-                Document.created_at.desc(),
-            )
+            .order_by(*order)
             .limit(limit)
             .offset(offset)
         )

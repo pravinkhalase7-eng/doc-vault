@@ -30,6 +30,7 @@ async def compute_health(db: AsyncSession, user_id: str) -> dict:
             "expiring_soon": 0,
             "expired": 0,
             "unverified": 0,
+            "total": 0,
         }
     categorized = sum(1 for d in docs if d.category_id)
     with_expiry = sum(1 for d in docs if d.expiry_date)

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, FileText, Image as ImageIcon } from "lucide-react";
+import { ChevronRight, FileText, HeartPulse, Image as ImageIcon, ShieldAlert, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { FolderGlyph } from "@/components/folder-glyph";
 import { fileKind } from "@/lib/file-kind";
 import { cn } from "@/lib/utils";
 import { isUpcomingReminder, type ReminderRow } from "@/lib/reminders";
+import { expiryLabel } from "@/lib/expiry";
 
 type FolderStat = { id: string; name: string; file_count: number; child_count: number };
 type RecentFile = {
@@ -19,6 +20,22 @@ type RecentFile = {
   mime_type?: string;
   size_bytes?: number;
   created_at?: string;
+};
+
+type Health = {
+  score: number;
+  notes: string[];
+  expiring_soon: number;
+  expired?: number;
+  unverified?: number;
+  total?: number;
+};
+type ExpiringFile = {
+  id: string;
+  title: string;
+  original_filename: string;
+  mime_type?: string;
+  expiry_date?: string | null;
 };
 
 type Dashboard = {
@@ -42,6 +59,9 @@ type Dashboard = {
   activity: { downloads: number; shares: number };
   recent: RecentFile[];
   collections: { total: number; folders: FolderStat[] };
+  health?: Health;
+  expiring?: { soon: number; expired: number; items: ExpiringFile[] };
+  trash_count?: number;
 };
 
 function formatBytes(n: number) {
@@ -166,6 +186,76 @@ export default function HomePage() {
           />
         </div>
       </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="rounded-2xl">
+          <CardContent className="flex items-start gap-4 p-5">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <HeartPulse className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-muted-foreground">Vault health</p>
+              <p className="mt-0.5 text-3xl font-bold tracking-tight">{dash?.health?.score ?? "—"}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {dash?.health?.notes?.[0] || "Upload a file to start tracking health."}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-2xl">
+          <CardContent className="space-y-3 p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Dates</p>
+                <h2 className="text-lg font-semibold">Expiring soon</h2>
+              </div>
+              <Link href="/expiring" className="text-sm text-primary">
+                See all
+              </Link>
+            </div>
+            {(dash?.expiring?.items || []).length === 0 ? (
+              <p className="py-2 text-sm text-muted-foreground">No passports or policies due in the next 30 days.</p>
+            ) : (
+              <div className="divide-y divide-border/70">
+                {(dash?.expiring?.items || []).map((file) => (
+                  <Link key={file.id} href={`/documents/${file.id}`} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+                      <ShieldAlert className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{file.title}</span>
+                      <span className="block text-xs text-muted-foreground">{expiryLabel(file.expiry_date)}</span>
+                    </span>
+                    <ChevronRight className="size-4 text-muted-foreground" />
+                  </Link>
+                ))}
+              </div>
+            )}
+            {(dash?.expiring?.expired || 0) + (dash?.expiring?.soon || 0) > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {dash?.expiring?.expired ? `${dash.expiring.expired} expired` : null}
+                {dash?.expiring?.expired && dash?.expiring?.soon ? " · " : null}
+                {dash?.expiring?.soon ? `${dash.expiring.soon} in the next 30 days` : null}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {(dash?.trash_count || 0) > 0 && (
+        <Link href="/trash" className="flex items-center gap-3 rounded-2xl border bg-card px-4 py-3">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            <Trash2 className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium">Trash</span>
+            <span className="block text-xs text-muted-foreground">
+              {dash?.trash_count} file{(dash?.trash_count || 0) === 1 ? "" : "s"} you can still restore
+            </span>
+          </span>
+          <ChevronRight className="size-4 text-muted-foreground" />
+        </Link>
+      )}
 
       {upcoming.length > 0 && (
         <Card className="rounded-2xl">

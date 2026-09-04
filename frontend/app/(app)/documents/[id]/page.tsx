@@ -49,6 +49,7 @@ type Doc = {
   sensitivity: string;
   ai_classification?: string | null;
   expiry_date?: string | null;
+  trashed_at?: string | null;
   collections?: CollectionRef[];
 };
 
@@ -208,6 +209,27 @@ export default function DocumentDetailPage() {
         </div>
       </div>
 
+      {doc.trashed_at ? (
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-background px-4 py-2">
+          <p className="text-sm text-muted-foreground">This file is in trash.</p>
+          <Button
+            size="sm"
+            className="rounded-full"
+            onClick={async () => {
+              try {
+                await api(`/documents/${doc.id}/restore`, { method: "POST" });
+                toast.success("Restored");
+                await load();
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not restore");
+              }
+            }}
+          >
+            Restore
+          </Button>
+        </div>
+      ) : null}
+
       <div className="relative min-h-0 flex-1 overflow-auto">
         {previewUrl ? (
           isImage ? (
@@ -322,16 +344,29 @@ export default function DocumentDetailPage() {
                 <p className="text-sm text-muted-foreground">Nothing extracted yet.</p>
               )}
             </div>
-            <Button
-              variant="destructive"
-              className="w-full rounded-full"
-              onClick={async () => {
-                await api(`/documents/${doc.id}`, { method: "DELETE" });
-                goBack(router);
-              }}
-            >
-              Move to trash
-            </Button>
+            {doc.trashed_at ? (
+              <Button
+                className="w-full rounded-full"
+                onClick={async () => {
+                  await api(`/documents/${doc.id}/restore`, { method: "POST" });
+                  toast.success("Restored");
+                  load();
+                }}
+              >
+                Restore from trash
+              </Button>
+            ) : (
+              <Button
+                variant="destructive"
+                className="w-full rounded-full"
+                onClick={async () => {
+                  await api(`/documents/${doc.id}`, { method: "DELETE" });
+                  goBack(router);
+                }}
+              >
+                Move to trash
+              </Button>
+            )}
           </div>
         </SheetContent>
       </Sheet>

@@ -32,7 +32,14 @@ export type User = {
   onboarding_completed: boolean;
   totp_enabled: boolean;
   preferences?: Preferences;
-  health?: { score: number; notes: string[]; expiring_soon: number; total?: number };
+  health?: {
+    score: number;
+    notes: string[];
+    expiring_soon: number;
+    expired?: number;
+    unverified?: number;
+    total?: number;
+  };
 };
 
 type AuthState = {
