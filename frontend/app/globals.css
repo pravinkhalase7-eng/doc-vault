@@ -174,9 +174,9 @@
 }
 
 .vault-chat-bg {
-  background-color: var(--background);
-  background-image:
-    radial-gradient(circle at 8px 8px, color-mix(in srgb, var(--mint) 16%, transparent) 1.15px, transparent 1.4px),
-    radial-gradient(circle at 22px 18px, color-mix(in srgb, var(--primary) 11%, transparent) 1px, transparent 1.25px);
-  background-size: 28px 28px, 36px 28px;
+  background-color: #f6f7f8;
+  background-image: none;
+}
+.dark .vault-chat-bg {
+  background-color: #161618;
 }

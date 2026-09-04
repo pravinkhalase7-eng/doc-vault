@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -200,6 +200,26 @@ function formatTime(iso?: string) {
   const date = iso ? new Date(iso) : new Date();
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function dayKey(iso?: string) {
+  const date = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  return dateKey(date);
+}
+
+function formatDayLabel(iso?: string) {
+  const date = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (dayKey(iso) === dateKey(new Date())) return "TODAY";
+  if (dayKey(iso) === dateKey(yesterday)) return "YESTERDAY";
+  return date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }).toUpperCase();
 }
 
 function extLabel(name?: string, mime?: string) {
@@ -910,7 +930,7 @@ export function VaultChat() {
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-semibold leading-tight">DocVault</p>
           <p className="truncate text-[12px] text-muted-foreground">
-            {cloud ? "Cloud AI · Gemini" : "Private AI · on device"}
+            {busy ? "typing…" : listening ? "listening…" : cloud ? "Cloud AI · Gemini" : "Private AI · on device"}
           </p>
         </div>
         <button
@@ -982,7 +1002,7 @@ export function VaultChat() {
 
       <div
         ref={listRef}
-        className="vault-chat-bg relative min-h-0 flex-1 overflow-y-auto px-3 py-4"
+        className="vault-chat-bg relative min-h-0 flex-1 overflow-y-auto px-4 py-4"
         onClick={() => setTrayOpen(false)}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
@@ -1016,22 +1036,42 @@ export function VaultChat() {
           </div>
         )}
 
-        <div className="mx-auto flex max-w-2xl flex-col gap-1.5">
-          {thread.map((item) => (
-            <Bubble
-              key={item.id}
-              item={item}
-              pendingIds={pendingIds}
-              onReply={(text) => void send(text)}
-            />
-          ))}
+        <div className="mx-auto flex max-w-2xl flex-col">
+          {thread.map((item, index) => {
+            const prev = thread[index - 1];
+            const next = thread[index + 1];
+            const showDay = !prev || dayKey(prev.at) !== dayKey(item.at);
+            const groupedWithPrev = Boolean(
+              prev && prev.role === item.role && dayKey(prev.at) === dayKey(item.at) && !showDay,
+            );
+            const groupedWithNext = Boolean(
+              next && next.role === item.role && dayKey(next.at) === dayKey(item.at),
+            );
+            return (
+              <Fragment key={item.id}>
+                {showDay ? <DayChip iso={item.at} /> : null}
+                <Bubble
+                  item={item}
+                  groupedWithPrev={groupedWithPrev}
+                  groupedWithNext={groupedWithNext}
+                  pendingIds={pendingIds}
+                  onReply={(text) => void send(text)}
+                />
+              </Fragment>
+            );
+          })}
           {busy && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl rounded-bl-sm bg-card px-4 py-3 shadow-sm">
+            <div className="mt-2 flex items-end justify-start gap-2">
+              <Avatar size="sm" className="mb-0.5 bg-[var(--accent)]">
+                <AvatarFallback className="bg-transparent text-[10px] font-medium text-[var(--accent-foreground)]">
+                  DV
+                </AvatarFallback>
+              </Avatar>
+              <div className="rounded-[1.5rem] bg-[#eef0f3] px-4 py-3 dark:bg-[#232326]">
                 <span className="flex gap-1">
-                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:-0.2s]" />
-                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:-0.1s]" />
-                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/70" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.2s]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.1s]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" />
                 </span>
               </div>
             </div>
@@ -1486,12 +1526,26 @@ function isSaveNote(item: ThreadItem) {
   return item.chat?.data_access?.note === true;
 }
 
+function DayChip({ iso }: { iso?: string }) {
+  return (
+    <div className="flex justify-center py-2">
+      <span className="rounded-full bg-black/[0.04] px-3 py-1 text-[11px] text-muted-foreground dark:bg-white/[0.06]">
+        {formatDayLabel(iso)}
+      </span>
+    </div>
+  );
+}
+
 function Bubble({
   item,
+  groupedWithPrev = false,
+  groupedWithNext = false,
   pendingIds,
   onReply,
 }: {
   item: ThreadItem;
+  groupedWithPrev?: boolean;
+  groupedWithNext?: boolean;
   pendingIds?: Set<string>;
   onReply?: (text: string) => void;
 }) {
@@ -1512,15 +1566,32 @@ function Bubble({
       pendingIds?.has(proposal.id),
   );
   return (
-    <div className={cn("flex w-full", mine ? "justify-end" : "justify-start")}>
+    <div
+      className={cn(
+        "flex w-full items-end gap-2",
+        mine ? "justify-end" : "justify-start",
+        groupedWithPrev ? "mt-1" : "mt-3",
+      )}
+    >
+      {!mine && (
+        <div className="mb-0.5 w-7 shrink-0">
+          {!groupedWithNext ? (
+            <Avatar size="sm" className="bg-[var(--accent)]">
+              <AvatarFallback className="bg-transparent text-[10px] font-medium text-[var(--accent-foreground)]">
+                DV
+              </AvatarFallback>
+            </Avatar>
+          ) : null}
+        </div>
+      )}
       <div
         className={cn(
-          "inline-flex min-w-0 max-w-[82%] flex-col text-left text-[15px] leading-relaxed",
-          media ? "w-[min(100%,22rem)] px-2.5 pb-2 pt-2" : "w-fit px-3.5 py-2.5",
-          "rounded-[22px] shadow-sm",
+          "inline-flex min-w-0 flex-col text-left text-[15px] leading-relaxed",
+          media ? "w-[min(78%,22rem)] px-3 pb-2 pt-2.5" : "w-fit max-w-[78%] px-4 py-2.5",
           mine
-            ? "rounded-br-md bg-accent text-accent-foreground"
-            : "rounded-bl-md bg-card text-card-foreground",
+            ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
+            : "bg-[#eef0f3] text-foreground dark:bg-[#232326]",
+          "rounded-[1.5rem]",
         )}
       >
         {!saveNote && item.attachments?.length ? <MediaGrid items={item.attachments} /> : null}
@@ -1530,19 +1601,24 @@ function Bubble({
         {tree.length > 0 ? <CollectionExplorer nodes={tree} /> : null}
         {!tree.length && files.length ? <MediaGrid items={files} /> : null}
         <div className="mt-1 flex items-center justify-end gap-1">
-          {!mine && item.chat && (
-            <span className="mr-auto text-[10px] text-muted-foreground">
+          {!mine && item.chat && !groupedWithNext && (
+            <span className="mr-auto text-[10px] text-muted-foreground/80">
               {item.chat.external_ai ? "Gemini" : "Private"}
             </span>
           )}
-          <span className="text-[10px] text-muted-foreground">{formatTime(item.at)}</span>
-          {mine && (item.sending ? <Check className="size-3.5 text-muted-foreground" /> : <CheckCheck className="size-3.5 text-primary" />)}
+          <span className="text-[11px] text-muted-foreground/70">{formatTime(item.at)}</span>
+          {mine &&
+            (item.sending ? (
+              <Check className="size-3.5 text-muted-foreground/50" />
+            ) : (
+              <CheckCheck className="size-3.5 text-muted-foreground/55" />
+            ))}
         </div>
-        {!mine && item.chat && !canConfirm && (
-          <div className="mt-1 flex gap-1">
+        {!mine && item.chat && !canConfirm && !groupedWithNext && (
+          <div className="mt-0.5 flex gap-1">
             <button
               type="button"
-              className="rounded-full p-1 text-muted-foreground hover:bg-muted"
+              className="rounded-full p-1 text-muted-foreground/70 hover:bg-black/5 dark:hover:bg-white/5"
               aria-label="Helpful"
               onClick={() =>
                 api("/ai/feedback", {
@@ -1555,7 +1631,7 @@ function Bubble({
             </button>
             <button
               type="button"
-              className="rounded-full p-1 text-muted-foreground hover:bg-muted"
+              className="rounded-full p-1 text-muted-foreground/70 hover:bg-black/5 dark:hover:bg-white/5"
               aria-label="Not helpful"
               onClick={() =>
                 api("/ai/feedback", {
