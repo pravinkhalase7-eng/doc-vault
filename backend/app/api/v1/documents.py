@@ -30,7 +30,7 @@ from app.models.document import Document, DocumentMetadata
 from app.models.enums import VerificationStatus
 from app.models.user import User
 from app.schemas.common import ConfirmMetadataRequest, DocumentMove, DocumentUpdate
-from app.storage.local import resolve_key
+from app.storage.local import content_disposition_header, resolve_key, stored_file_path
 from app.documents.ocr import generate_reel_images, reel_preview_is_sideways
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -241,9 +241,7 @@ async def destroy(document_id: str, user: User = Depends(get_current_user), db: 
 @router.get("/{document_id}/download")
 async def download(document_id: str, user: User = Depends(get_file_user), db: AsyncSession = Depends(get_db)):
     doc = await get_document_for_user(db, user.id, document_id)
-    path = resolve_key(doc.storage_key)
-    if not path.exists():
-        raise AppError("FILE_MISSING", "File is not available", 404)
+    path = stored_file_path(doc.storage_key)
     doc.download_count = (doc.download_count or 0) + 1
     await db.commit()
 
@@ -257,21 +255,19 @@ async def download(document_id: str, user: User = Depends(get_file_user), db: As
 
     return StreamingResponse(
         iterator(),
-        media_type=doc.mime_type,
-        headers={"Content-Disposition": f'attachment; filename="{doc.original_filename}"'},
+        media_type=doc.mime_type or "application/octet-stream",
+        headers={"Content-Disposition": content_disposition_header("attachment", doc.original_filename)},
     )
 
 
 @router.get("/{document_id}/preview")
 async def preview(document_id: str, user: User = Depends(get_file_user), db: AsyncSession = Depends(get_db)):
     doc = await get_document_for_user(db, user.id, document_id)
-    path = resolve_key(doc.storage_key)
-    if not path.exists():
-        raise AppError("FILE_MISSING", "File is not available", 404)
+    path = stored_file_path(doc.storage_key)
     return FileResponse(
         path,
-        media_type=doc.mime_type,
-        headers={"Content-Disposition": f'inline; filename="{doc.original_filename}"'},
+        media_type=doc.mime_type or "application/octet-stream",
+        headers={"Content-Disposition": content_disposition_header("inline", doc.original_filename)},
     )
 
 

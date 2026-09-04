@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 import aiofiles
 
@@ -93,6 +94,28 @@ def resolve_key(storage_key: str) -> Path:
     if not str(path).startswith(str(root)):
         raise AppError("PATH_TRAVERSAL", "Invalid storage path", 400)
     return path
+
+
+def stored_file_path(storage_key: str | None) -> Path:
+    """Resolve a vault object and fail as 404 when it is missing or not a regular file."""
+    if not storage_key or not str(storage_key).strip():
+        raise AppError("FILE_MISSING", "File is not available", 404)
+    path = resolve_key(storage_key)
+    if not path.is_file():
+        raise AppError("FILE_MISSING", "File is not available", 404)
+    return path
+
+
+def content_disposition_header(disposition: str, filename: str | None) -> str:
+    """Build a latin-1-safe Content-Disposition value (RFC 5987 filename*)."""
+    raw = (filename or "document").replace("\\", "_").replace("/", "_")
+    raw = raw.replace("\r", " ").replace("\n", " ").replace("\0", "").strip() or "document"
+    ascii_name = raw.encode("ascii", "replace").decode("ascii").replace("?", "_").replace('"', "'")
+    ascii_name = ascii_name.strip() or "document"
+    encoded = quote(raw.encode("utf-8"), safe="")
+    header = f'{disposition}; filename="{ascii_name}"; filename*=UTF-8\'\'{encoded}'
+    header.encode("latin-1")
+    return header
 
 
 def _ftyp_brands(data: bytes) -> bytes:

@@ -18,7 +18,7 @@ from app.models.enums import ShareRole
 from app.models.sharing import Share, ShareLink, ShareLinkEvent
 from app.models.user import User
 from app.schemas.common import ShareCreate, ShareLinkCreate
-from app.storage.local import resolve_key
+from app.storage.local import content_disposition_header, stored_file_path
 
 router = APIRouter(prefix="/sharing", tags=["sharing"])
 settings = get_settings()
@@ -169,13 +169,11 @@ async def shared_file(token: str, db: AsyncSession = Depends(get_db), download: 
     doc = await db.get(Document, rec.document_id)
     if not doc:
         raise NotFoundError("FILE_MISSING", "Shared file is no longer available")
-    path = resolve_key(doc.storage_key)
-    if not path.exists():
-        raise AppError("FILE_MISSING", "File is not available", 404)
+    path = stored_file_path(doc.storage_key)
     as_attachment = download and rec.download_allowed
     disposition = "attachment" if as_attachment else "inline"
     return FileResponse(
         path,
-        media_type=doc.mime_type,
-        headers={"Content-Disposition": f'{disposition}; filename="{doc.original_filename}"'},
+        media_type=doc.mime_type or "application/octet-stream",
+        headers={"Content-Disposition": content_disposition_header(disposition, doc.original_filename)},
     )

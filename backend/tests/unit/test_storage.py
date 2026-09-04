@@ -6,7 +6,7 @@ from datetime import datetime, UTC
 from app.documents.service import serialize_document
 from app.exceptions import AppError
 from app.models.enums import DocumentStatus, SensitivityLevel, VerificationStatus
-from app.storage.local import detect_type, sha256_bytes
+from app.storage.local import content_disposition_header, detect_type, sha256_bytes, stored_file_path
 
 
 def test_detect_pdf_magic():
@@ -65,6 +65,31 @@ def test_detect_rejects_exe_and_raw_zip():
 def test_sha256_stable():
     assert sha256_bytes(b"abc") == sha256_bytes(b"abc")
     assert sha256_bytes(b"abc") != sha256_bytes(b"abd")
+
+
+def test_content_disposition_header_is_latin1_safe():
+    header = content_disposition_header("inline", 'पॉलिसी — "Q3".pdf')
+    header.encode("latin-1")
+    assert 'filename="' in header
+    assert "filename*=UTF-8''" in header
+    assert "\n" not in header
+    assert '"' not in header.split('filename="', 1)[1].split('"', 1)[0]
+
+
+def test_content_disposition_header_strips_newlines():
+    header = content_disposition_header("attachment", "invoice\r\n.pdf")
+    header.encode("latin-1")
+    assert "\r" not in header
+    assert "\n" not in header
+
+
+def test_stored_file_path_missing_key():
+    try:
+        stored_file_path(None)
+        assert False, "should raise"
+    except AppError as exc:
+        assert exc.code == "FILE_MISSING"
+        assert exc.status_code == 404
 
 
 def test_serialize_document_without_loaded_tags():
