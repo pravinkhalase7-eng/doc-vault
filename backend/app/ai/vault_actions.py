@@ -74,6 +74,30 @@ CANCEL_PHRASES = {
 class ParsedIntent:
     kind: str
     name: str | None = None
+    group: str | None = None
+
+
+FILE_GROUPS = {
+    "pdf": "pdf",
+    "pdfs": "pdf",
+    "photo": "photo",
+    "photos": "photo",
+    "image": "photo",
+    "images": "photo",
+    "picture": "photo",
+    "pictures": "photo",
+    "pic": "photo",
+    "pics": "photo",
+    "jpeg": "photo",
+    "jpegs": "photo",
+    "jpg": "photo",
+    "jpgs": "photo",
+    "png": "photo",
+    "pngs": "photo",
+    "other": "other",
+    "others": "other",
+}
+FILE_GROUP_TOKEN = r"pdfs?|photos?|images?|pictures?|pics?|jpegs?|jpgs?|pngs?|others?"
 
 
 def clean_name(raw: str | None) -> str:
@@ -150,6 +174,20 @@ def parse_vault_intent(message: str) -> ParsedIntent:
             return ParsedIntent("delete_named", name)
 
     if not re.search(r"\b(collections?|folders?)\b", lowered):
+        match = re.fullmatch(
+            r"(?:(?:can you|could you|please)\s+)?(?:show|list|give|get|find|open)\s+"
+            r"(?:me\s+)?(?:all\s+)?(?:the\s+)?(?:my\s+)?"
+            rf"({FILE_GROUP_TOKEN})(?:\s+(?:files?|documents?|docs))?(?:\s+please)?",
+            lowered,
+        )
+        if match:
+            return ParsedIntent("list_documents", group=FILE_GROUPS[match.group(1)])
+        match = re.fullmatch(
+            rf"(?:all\s+|my\s+)?({FILE_GROUP_TOKEN})(?:\s+(?:files?|documents?|docs))?",
+            lowered,
+        )
+        if match:
+            return ParsedIntent("list_documents", group=FILE_GROUPS[match.group(1)])
         match = re.search(
             r"^(?:show|list|give|get|find|open)\s+(?:me\s+)?(?:all\s+)?(?:the\s+)?(?:my\s+)?"
             r"(?:files?|documents?|docs)\b(?:\s+(?:named|called)\s+(.+))?$",
@@ -172,6 +210,18 @@ def parse_vault_intent(message: str) -> ParsedIntent:
         if lowered in {"documents", "files", "docs", "my documents", "my files"}:
             return ParsedIntent("list_documents")
     return ParsedIntent("none")
+
+
+def document_file_group(doc: Any) -> str:
+    mime = (getattr(doc, "mime_type", None) or "").lower()
+    name = (getattr(doc, "original_filename", None) or "").lower()
+    if mime.startswith("image/") or re.search(
+        r"\.(png|jpe?g|gif|webp|bmp|tiff?|heic|heif|avif)$", name
+    ):
+        return "photo"
+    if "pdf" in mime or name.endswith(".pdf"):
+        return "pdf"
+    return "other"
 
 
 def document_matches_name(doc: Any, query: str) -> bool:
@@ -307,7 +357,7 @@ async def handle_vault_action(
 
     await _cancel_pending(db, user.id)
     if intent.kind == "list_documents":
-        return await _list_vault_documents(db, user)
+        return await _list_vault_documents(db, user, group=intent.group)
     if intent.kind == "show_document":
         return await _show_named_document(db, user, intent.name)
     if intent.kind == "delete_all_files":
@@ -461,15 +511,21 @@ async def _resolve_asked_name(
     return await _start_delete_document(db, user, name, conversation_id)
 
 
-async def _list_vault_documents(db: AsyncSession, user: User) -> dict:
-    docs, _total = await list_documents(db, user.id, limit=40)
+async def _list_vault_documents(db: AsyncSession, user: User, group: str | None = None) -> dict:
+    # Filter by group in SQL so limit applies to matches (avoids silent misses after client filter).
+    docs, total = await list_documents(db, user.id, limit=200, file_group=group)
     visible = [doc for doc in docs if not doc.trashed_at]
+    if group:
+        visible = [doc for doc in visible if document_file_group(doc) == group]
+    labels = {"photo": "photos", "pdf": "PDFs", "other": "other files"}
+    noun = labels.get(group or "", "files")
     if not visible:
-        return {"answer": "You don't have any files yet. Tap + to save one."}
+        return {"answer": f"You don't have any {noun} yet."}
     names = [doc.title for doc in visible[:30]]
-    extra = f"\n…and {len(visible) - 30} more." if len(visible) > 30 else ""
+    more_count = max(0, int(total) - min(30, len(visible))) if group else max(0, len(visible) - 30)
+    extra = f"\n…and {more_count} more." if more_count else ""
     return {
-        "answer": f"Here are your files. Tap one to open it.\n{_bullet(names)}{extra}",
+        "answer": f"Here are your {noun}. Tap one to open it.\n{_bullet(names)}{extra}",
         "docs": visible[:24],
     }
 

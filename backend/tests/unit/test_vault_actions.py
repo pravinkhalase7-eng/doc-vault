@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from app.ai.vault_actions import (
     clean_name,
+    document_file_group,
     document_matches_name,
     parse_vault_intent,
 )
@@ -70,6 +71,25 @@ def test_parse_show_documents():
     assert parse_vault_intent("delete documents").kind == "delete_document"
 
 
+def test_parse_give_me_all_pdfs():
+    for phrase in (
+        "give me all pdf",
+        "give me all pdfs",
+        "show all pdfs",
+        "list my pdf files",
+        "pdfs",
+    ):
+        intent = parse_vault_intent(phrase)
+        assert intent.kind == "list_documents", phrase
+        assert intent.group == "pdf", phrase
+    photos = parse_vault_intent("show me all photos")
+    assert photos.kind == "list_documents"
+    assert photos.group == "photo"
+    other = parse_vault_intent("give me other files")
+    assert other.kind == "list_documents"
+    assert other.group == "other"
+
+
 def test_parse_delete_named_document():
     intent = parse_vault_intent("delete the document Passport")
     assert intent.kind == "delete_document"
@@ -93,6 +113,12 @@ def test_parse_confirm_and_cancel():
 def test_clean_name_strips_articles():
     assert clean_name("the Personal collection") == "Personal"
     assert clean_name("my passport file") == "passport"
+
+
+def test_document_file_group():
+    assert document_file_group(SimpleNamespace(mime_type="application/pdf", original_filename="a.pdf")) == "pdf"
+    assert document_file_group(SimpleNamespace(mime_type="image/jpeg", original_filename="x.jpg")) == "photo"
+    assert document_file_group(SimpleNamespace(mime_type="application/msword", original_filename="letter.doc")) == "other"
 
 
 def test_document_matches_saved_title():

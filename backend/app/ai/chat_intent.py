@@ -29,12 +29,13 @@ HELP_RE = re.compile(
 VAULT_RE = re.compile(
     r"\b(document|documents|file|files|folder|folders|collection|collections|vault|"
     r"passport|visa|aadhaar|aadhar|pan|license|licence|insurance|policy|"
+    r"pdf|pdfs|photo|photos|image|images|picture|pictures|"
     r"expiry|expire|expiring|upload|delete|remove|remind|reminder|appointment|"
     r"call me|phone call)\b",
     re.I,
 )
 SEARCH_RE = re.compile(
-    r"\b(show|find|list|search|where is|when does|when is|which documents?)\b",
+    r"\b(show|find|list|search|give|get|where is|when does|when is|which documents?)\b",
     re.I,
 )
 

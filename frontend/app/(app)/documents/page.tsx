@@ -54,7 +54,7 @@ function useCount(doc: Doc) {
   return doc.use_count ?? (doc.download_count || 0) + (doc.share_count || 0);
 }
 
-function DocRow({ doc }: { doc: Doc }) {
+function DocRow({ doc, onDeleted }: { doc: Doc; onDeleted: (id: string) => void }) {
   const kind = fileKind(doc);
   const uses = useCount(doc);
   const when = fileTimestamps(doc.created_at, doc.updated_at);
@@ -87,7 +87,12 @@ function DocRow({ doc }: { doc: Doc }) {
           {when ? <span className="mt-0.5 block truncate text-xs text-muted-foreground">{when}</span> : null}
         </span>
       </Link>
-      <FileActions id={doc.id} title={doc.title} filename={doc.original_filename} />
+      <FileActions
+        id={doc.id}
+        title={doc.title}
+        filename={doc.original_filename}
+        onDeleted={() => onDeleted(doc.id)}
+      />
     </div>
   );
 }
@@ -187,14 +192,14 @@ function DocumentsBrowser() {
           {frequent.length > 0 && (
             <Section title="Frequently used" count={frequent.length}>
               {frequent.map((doc) => (
-                <DocRow key={doc.id} doc={doc} />
+                <DocRow key={doc.id} doc={doc} onDeleted={(id) => setItems((current) => current.filter((item) => item.id !== id))} />
               ))}
             </Section>
           )}
           {(frequent.length ? rest : visible).length > 0 && (
             <Section title={kind ? copy?.title || "Files" : frequent.length ? "All files" : "Your files"} count={(frequent.length ? rest : visible).length}>
               {(frequent.length ? rest : visible).map((doc) => (
-                <DocRow key={doc.id} doc={doc} />
+                <DocRow key={doc.id} doc={doc} onDeleted={(id) => setItems((current) => current.filter((item) => item.id !== id))} />
               ))}
             </Section>
           )}

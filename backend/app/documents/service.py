@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import func, or_, select, inspect as sa_inspect
+from sqlalchemy import func, not_, or_, select, inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -237,6 +237,38 @@ async def _document_with_tags(db: AsyncSession, document_id: str) -> Document:
     return loaded
 
 
+
+_PHOTO_SUFFIXES = (
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".tif",
+    ".tiff",
+    ".heic",
+    ".heif",
+    ".avif",
+)
+
+
+def _file_group_clause(file_group: str):
+    """SQL filter aligned with vault_actions.document_file_group."""
+    photo = or_(
+        Document.mime_type.ilike("image/%"),
+        *[Document.original_filename.ilike(f"%{suffix}") for suffix in _PHOTO_SUFFIXES],
+    )
+    pdf = or_(Document.mime_type.ilike("%pdf%"), Document.original_filename.ilike("%.pdf"))
+    if file_group == "photo":
+        return photo
+    if file_group == "pdf":
+        return pdf
+    if file_group == "other":
+        return not_(or_(photo, pdf))
+    return None
+
+
 async def list_documents(
     db: AsyncSession,
     user_id: str,
@@ -246,6 +278,7 @@ async def list_documents(
     status: str | None = None,
     trash: bool = False,
     expiring_days: int | None = None,
+    file_group: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[Document], int]:
@@ -264,6 +297,10 @@ async def list_documents(
         filters.append(Document.category_id == category_id)
     if status:
         filters.append(Document.status == status)
+    if file_group:
+        clause = _file_group_clause(file_group)
+        if clause is not None:
+            filters.append(clause)
     if expiring_days is not None and not trash:
         cutoff = date.today() + timedelta(days=expiring_days)
         filters.append(Document.expiry_date.is_not(None))

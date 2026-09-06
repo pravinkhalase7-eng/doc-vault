@@ -28,7 +28,9 @@ const nav = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const { user, logout } = useAuth();
-  const isFileViewer = path.startsWith("/documents/") && !path.includes("/upload");
+  const documentSegment = path.startsWith("/documents/") ? path.slice("/documents/".length).split("/")[0] : "";
+  const reservedDocumentRoutes = new Set(["upload", "scan"]);
+  const isFileViewer = Boolean(documentSegment) && !reservedDocumentRoutes.has(documentSegment);
   const isChat = path === "/ai" || path.startsWith("/ai/");
   const isReels = path === "/reels" || path.startsWith("/reels/");
   const immersive = isFileViewer || isChat || isReels;

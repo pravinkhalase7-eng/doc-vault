@@ -16,6 +16,7 @@ import {
   Trash2,
   Upload,
   Users,
+  FolderMinus,
 } from "lucide-react";
 import { FileActions } from "@/components/file-actions";
 import { DocumentThumb } from "@/components/document-thumb";
@@ -582,21 +583,25 @@ function FolderContents({
                         </span>
                       </span>
                     </Link>
-                    <div className="flex items-center justify-between px-1 pb-1">
+                    <div className="flex flex-col gap-1 px-1 pb-1.5">
                       <FileActions
                         id={doc.id}
                         title={doc.title}
                         filename={doc.original_filename}
                         currentCollectionId={col.id}
                         onMoved={onChanged}
+                        onDeleted={onChanged}
+                        className="justify-start"
                       />
                       {!col.is_default && editable && (
                         <button
                           type="button"
-                          className="px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                          className="inline-flex min-h-9 items-center gap-1.5 self-start rounded-full px-2.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                           onClick={() => removeDoc(doc.id)}
+                          title="Remove from this folder (file stays in vault)"
                         >
-                          Remove
+                          <FolderMinus className="size-3.5 shrink-0" />
+                          Remove from folder
                         </button>
                       )}
                     </div>

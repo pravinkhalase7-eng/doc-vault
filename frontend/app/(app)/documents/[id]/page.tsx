@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Pencil,
   Share2,
+  Trash2,
 } from "lucide-react";
 import { api, apiBlob } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type Field = {
   id: string;
@@ -77,6 +88,8 @@ export default function DocumentDetailPage() {
   const [titleDraft, setTitleDraft] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     const data = await api<Doc>(`/documents/${id}`);
@@ -156,6 +169,21 @@ export default function DocumentDetailPage() {
     }
   }
 
+  async function confirmDelete() {
+    if (!doc || deleting) return;
+    setDeleting(true);
+    try {
+      await api(`/documents/${doc.id}`, { method: "DELETE" });
+      toast.success("Moved to trash");
+      setDeleteOpen(false);
+      goBack(router);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (!doc) {
     return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
   }
@@ -211,6 +239,17 @@ export default function DocumentDetailPage() {
             <p className="truncate text-[11px] text-muted-foreground">{meta.join(" · ")}</p>
           )}
         </div>
+        {!doc.trashed_at && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="rounded-full text-destructive hover:text-destructive"
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Trash2 className="size-4" />
+            <span className="sr-only">Delete</span>
+          </Button>
+        )}
       </div>
 
       {doc.trashed_at ? (
@@ -371,10 +410,7 @@ export default function DocumentDetailPage() {
               <Button
                 variant="destructive"
                 className="w-full rounded-full"
-                onClick={async () => {
-                  await api(`/documents/${doc.id}`, { method: "DELETE" });
-                  goBack(router);
-                }}
+                onClick={() => setDeleteOpen(true)}
               >
                 Move to trash
               </Button>
@@ -382,6 +418,22 @@ export default function DocumentDetailPage() {
           </div>
         </SheetContent>
       </Sheet>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {doc.title}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It goes to trash for 30 days. You can restore it from Settings → Trash.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -18,6 +18,8 @@ def test_hello_is_a_greeting_not_a_vault_search():
     assert not is_general_chat("show me all collections")
     assert not is_general_chat("help me find my passport")
     assert not is_general_chat("Remind me tomorrow at 10am to renew my passport")
+    assert not is_general_chat("give me all pdf")
+    assert not is_general_chat("show all photos")
 
 
 def test_hello_reply_greets_instead_of_missing_documents():

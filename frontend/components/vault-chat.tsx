@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -317,11 +317,43 @@ export function VaultChat() {
     );
   }, [vaultDocs, vaultQuery]);
 
-  useEffect(() => {
+  function scrollToLatest() {
     const el = listRef.current;
     if (!el) return;
+    // Keep scrolling inside the message list only — scrollIntoView can move the page/composer.
     el.scrollTop = el.scrollHeight;
+  }
+
+  useLayoutEffect(() => {
+    scrollToLatest();
+    // Second pass after paint covers bubble layout / keyboard height changes.
+    const id = window.requestAnimationFrame(() => {
+      scrollToLatest();
+      window.requestAnimationFrame(scrollToLatest);
+    });
+    return () => window.cancelAnimationFrame(id);
   }, [thread, busy, pending]);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onViewport = () => {
+      if (busy || thread.length === 0) {
+        scrollToLatest();
+        return;
+      }
+      const el = listRef.current;
+      if (!el) return;
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+      if (nearBottom) scrollToLatest();
+    };
+    vv.addEventListener("resize", onViewport);
+    vv.addEventListener("scroll", onViewport);
+    return () => {
+      vv.removeEventListener("resize", onViewport);
+      vv.removeEventListener("scroll", onViewport);
+    };
+  }, [busy, thread.length]);
 
   useEffect(() => {
     sendRef.current = (text) => void send(text);
@@ -525,6 +557,7 @@ export function VaultChat() {
     flushSync(() => {
       setThread((t) => [...t, userItem]);
     });
+    scrollToLatest();
     try {
       const uploaded: VaultDoc[] = [];
       for (let index = 0; index < files.length; index += 1) {
@@ -708,6 +741,7 @@ export function VaultChat() {
       setMessage("");
       setPending([]);
     });
+    scrollToLatest();
     if (inputRef.current) inputRef.current.style.height = "auto";
     try {
       const uploadedIds: string[] = [];
@@ -1085,7 +1119,7 @@ export function VaultChat() {
         </div>
       </div>
 
-      <footer className="relative z-20 bg-background/95 pb-[calc(4.75rem+env(safe-area-inset-bottom))] pt-1 md:pb-3">
+      <footer className="relative z-20 shrink-0 overflow-visible bg-background/95 pb-[calc(4.75rem+env(safe-area-inset-bottom))] pt-1 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] md:pb-3">
         {mode === "chat" && trayOpen && (
           <div className="mx-auto mb-2 max-w-2xl px-3">
             <div className="grid grid-cols-4 gap-3 rounded-2xl bg-card p-4 shadow-lg ring-1 ring-border">
@@ -1127,7 +1161,7 @@ export function VaultChat() {
 
         {mode === "chat" ? (
         <form
-          className="mx-auto flex max-w-2xl items-end gap-2 px-2"
+          className="mx-auto flex w-full min-w-0 max-w-2xl items-end gap-1.5 px-2 sm:gap-2"
           onSubmit={(e) => {
             e.preventDefault();
             send();
@@ -1137,11 +1171,11 @@ export function VaultChat() {
             type="button"
             aria-label={trayOpen ? "Close attachments" : "Attach"}
             onClick={() => setTrayOpen((open) => !open)}
-            className="mb-0.5 flex size-11 items-center justify-center rounded-full text-muted-foreground hover:bg-muted"
+            className="mb-0.5 flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted"
           >
             <Plus className={cn("size-7 transition-transform", trayOpen && "rotate-45")} />
           </button>
-          <div className="flex min-w-0 flex-1 items-end rounded-[1.6rem] bg-card px-3 py-1.5 shadow-sm ring-1 ring-border">
+          <div className="flex min-w-0 flex-1 items-end overflow-hidden rounded-[1.6rem] bg-card px-3 py-1.5 shadow-sm ring-1 ring-border">
             <textarea
               ref={inputRef}
               rows={1}
@@ -1182,18 +1216,18 @@ export function VaultChat() {
             <button
               type="submit"
               aria-label="Send"
-              className="mb-0.5 flex size-11 items-center justify-center rounded-full bg-[var(--mint)] text-[var(--mint-foreground)] shadow-sm"
+              className="mb-0.5 flex size-11 shrink-0 items-center justify-center rounded-full bg-[var(--mint)] text-[var(--mint-foreground)] shadow-sm"
             >
-              <SendHorizontal className="size-5" />
+              <SendHorizontal className="size-5 shrink-0" />
             </button>
           ) : (
             <button
               type="button"
               aria-label="Voice"
               onClick={() => openVoiceTab(true)}
-              className="mb-0.5 flex size-11 items-center justify-center rounded-full bg-[var(--mint)] text-[var(--mint-foreground)] shadow-sm"
+              className="mb-0.5 flex size-11 shrink-0 items-center justify-center rounded-full bg-[var(--mint)] text-[var(--mint-foreground)] shadow-sm"
             >
-              <Mic className="size-5" />
+              <Mic className="size-5 shrink-0" />
             </button>
           )}
         </form>

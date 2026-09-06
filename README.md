@@ -33,11 +33,12 @@ alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 
 cd ../frontend
+cp .env.example .env.local   # BACKEND_URL -> http://127.0.0.1:8000
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000
+Open http://localhost:3000 (Next proxies /api to uvicorn on port 8000)
 
 ## Production
 
@@ -51,5 +52,3 @@ See [DEPLOYMENT.md](DEPLOYMENT.md). Use `./scripts/deploy.sh` on the VPS. Mount 
 - [API.md](API.md)
 - [DATABASE.md](DATABASE.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
-# doc-vault
-# doc-vault

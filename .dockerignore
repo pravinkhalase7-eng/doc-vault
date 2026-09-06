@@ -18,3 +18,7 @@ storage/tmp
 backups
 *.log
 frontend/tsconfig.tsbuildinfo
+backend/storage/data
+backend/storage/tmp
+**/storage/data
+**/storage/tmp

@@ -175,7 +175,7 @@ export default function HomePage() {
           <StatTile
             label="Photos"
             value={docs?.images ?? 0}
-            hint={docs?.pdfs ? `${docs.pdfs} PDFs` : "Images saved"}
+            hint={docs?.images ? "Images in your vault" : "No photos yet"}
             href="/documents?kind=photo"
           />
           <StatTile

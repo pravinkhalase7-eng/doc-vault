@@ -30,6 +30,10 @@ frontend/*.tsbuildinfo
 # Storage (never commit user documents)
 storage/data/
 storage/tmp/
+backend/storage/data/
+backend/storage/tmp/
+**/storage/data/
+**/storage/tmp/
 /var/lib/docvault/
 
 # Backups
