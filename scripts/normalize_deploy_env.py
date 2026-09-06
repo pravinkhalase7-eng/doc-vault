@@ -33,6 +33,60 @@ def read_value(text: str, key: str, default: str = "") -> str:
     return match.group(1).strip().strip("'").strip('"')
 
 
+
+WEAK_SECRET_MARKERS = ("change-me", "changeme", "dev-only", "replace-me", "your-secret")
+KNOWN_WEAK_PASSWORDS = {
+    "",
+    "docvault",
+    "password",
+    "postgres",
+    "admin",
+    "secret",
+    "changeme",
+    "change-me",
+}
+
+
+def looks_weak(value: str, *, min_length: int = 16) -> bool:
+    raw = (value or "").strip()
+    if not raw or len(raw) < min_length:
+        return True
+    lowered = raw.lower()
+    if lowered in KNOWN_WEAK_PASSWORDS:
+        return True
+    return any(marker in lowered for marker in WEAK_SECRET_MARKERS)
+
+
+def assert_strong_production_secrets(text: str) -> None:
+    """Fail fast when deploying APP_ENV=production with placeholder secrets."""
+    env = read_value(text, "APP_ENV", "development").lower()
+    if env != "production":
+        return
+    checks = [
+        ("SECRET_KEY", read_value(text, "SECRET_KEY"), 16),
+        ("JWT_SECRET", read_value(text, "JWT_SECRET"), 16),
+        ("ENCRYPTION_KEY", read_value(text, "ENCRYPTION_KEY"), 16),
+        ("POSTGRES_PASSWORD", read_value(text, "POSTGRES_PASSWORD"), 12),
+    ]
+    weak = [name for name, value, min_len in checks if looks_weak(value, min_length=min_len)]
+    database_url = read_value(text, "DATABASE_URL")
+    if any(marker in database_url.lower() for marker in WEAK_SECRET_MARKERS) or looks_weak(
+        read_value(text, "POSTGRES_PASSWORD"), min_length=12
+    ):
+        if "DATABASE_URL" not in weak and (
+            any(marker in database_url.lower() for marker in WEAK_SECRET_MARKERS)
+            or ":docvault@" in database_url
+            or ":password@" in database_url
+        ):
+            weak.append("DATABASE_URL")
+    if weak:
+        names = ", ".join(weak)
+        raise SystemExit(
+            f"ERROR: refusing to normalize deploy env for production with weak secrets: {names}. "
+            "Replace change-me / empty / known defaults before deploying."
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("env_file")
@@ -124,6 +178,7 @@ def main() -> None:
         if from_jenkins:
             text = upsert(text, key, from_jenkins)
 
+    assert_strong_production_secrets(text)
     path.write_text(text if text.endswith("\n") else text + "\n")
 
 

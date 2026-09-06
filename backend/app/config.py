@@ -163,3 +163,81 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+
+_WEAK_SECRET_MARKERS = (
+    "change-me",
+    "changeme",
+    "dev-only",
+    "replace-me",
+    "your-secret",
+)
+_KNOWN_WEAK_PASSWORDS = {
+    "",
+    "docvault",
+    "password",
+    "postgres",
+    "admin",
+    "secret",
+    "changeme",
+    "change-me",
+}
+
+
+def _looks_weak_secret(value: str | None, *, min_length: int = 16) -> bool:
+    raw = (value or "").strip()
+    if not raw:
+        return True
+    if len(raw) < min_length:
+        return True
+    lowered = raw.lower()
+    if lowered in _KNOWN_WEAK_PASSWORDS:
+        return True
+    return any(marker in lowered for marker in _WEAK_SECRET_MARKERS)
+
+
+def _database_url_password(url: str) -> str:
+    # postgresql+asyncpg://user:pass@host/db — password may contain URL-encoding
+    try:
+        after_scheme = url.split("://", 1)[1]
+        creds = after_scheme.split("@", 1)[0]
+        if ":" not in creds:
+            return ""
+        return creds.split(":", 1)[1]
+    except Exception:
+        return ""
+
+
+def assert_production_secrets_ok(settings: Settings | None = None) -> None:
+    """Refuse to boot in production with empty or well-known placeholder secrets."""
+    import os
+
+    cfg = settings or get_settings()
+    if cfg.app_env != "production":
+        return
+
+    checks: list[tuple[str, str | None, int]] = [
+        ("SECRET_KEY", cfg.secret_key, 16),
+        ("JWT_SECRET", cfg.jwt_secret, 16),
+        ("ENCRYPTION_KEY", cfg.encryption_key, 16),
+    ]
+    postgres_password = os.environ.get("POSTGRES_PASSWORD")
+    if postgres_password is not None:
+        checks.append(("POSTGRES_PASSWORD", postgres_password, 12))
+
+    weak = [name for name, value, min_len in checks if _looks_weak_secret(value, min_length=min_len)]
+    db_password = _database_url_password(cfg.database_url or "")
+    if _looks_weak_secret(db_password, min_length=12) or _looks_weak_secret(cfg.database_url, min_length=16):
+        # Flag DATABASE_URL when its embedded password or the URL itself looks like a placeholder.
+        if "DATABASE_URL" not in weak:
+            weak.append("DATABASE_URL")
+
+    if weak:
+        names = ", ".join(weak)
+        raise RuntimeError(
+            "Refusing to start with weak/default secrets in production: "
+            f"{names}. Set strong unique values (not change-me / empty / short defaults) "
+            "in the deploy env before launching APP_ENV=production."
+        )
+

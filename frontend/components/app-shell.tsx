@@ -31,9 +31,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const documentSegment = path.startsWith("/documents/") ? path.slice("/documents/".length).split("/")[0] : "";
   const reservedDocumentRoutes = new Set(["upload", "scan"]);
   const isFileViewer = Boolean(documentSegment) && !reservedDocumentRoutes.has(documentSegment);
+  const isScan = path === "/documents/scan" || path.startsWith("/documents/scan/");
   const isChat = path === "/ai" || path.startsWith("/ai/");
   const isReels = path === "/reels" || path.startsWith("/reels/");
-  const immersive = isFileViewer || isChat || isReels;
+  const immersive = isFileViewer || isChat || isReels || isScan;
+  const hideChrome = isFileViewer || isScan;
 
   useEffect(() => {
     if (isFileViewer || typeof window === "undefined") return;
@@ -42,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={cn("bg-background", immersive ? "h-dvh overflow-hidden" : "min-h-screen")}>
-      {!isFileViewer && (
+      {!hideChrome && (
         <aside className="fixed inset-y-0 left-0 hidden w-64 border-r bg-sidebar p-5 md:flex md:flex-col">
           <Link href="/home" className="mb-8">
             <p className="font-mono text-[11px] tracking-[0.28em] text-[var(--mint)]">PRIVATE AI</p>
@@ -95,7 +97,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
       )}
 
-      <div className={isFileViewer ? "" : "md:pl-64"}>
+      <div className={hideChrome ? "" : "md:pl-64"}>
         {!immersive && (
           <header className="sticky top-0 z-20 flex items-center justify-between border-b bg-background/80 px-2 py-1.5 backdrop-blur">
             <Link href="/home" className="px-2 text-lg font-semibold tracking-tight">
@@ -115,7 +117,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {!isFileViewer && (
+      {!hideChrome && (
         <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-background/95 p-2 backdrop-blur md:hidden">
           {nav.map((item) => {
             const Icon = item.icon;

@@ -166,10 +166,16 @@ Or leave a copy at /var/jenkins_home/doc-vault.env on the Jenkins host.''')
             fi
             echo "=== PUBLIC_HOST / APP_URL ==="
             grep -E '^(PUBLIC_HOST|APP_URL|CORS_ORIGINS)=' .env.deploy || true
-            echo "=== DATABASE_URL from .env.deploy ==="
-            grep DATABASE_URL .env.deploy || true
-            echo "=== POSTGRES_PASSWORD from .env.deploy ==="
-            grep POSTGRES_PASSWORD .env.deploy || true
+            if grep -qE '^DATABASE_URL=.+' .env.deploy; then
+              echo "DATABASE_URL: set"
+            else
+              echo "DATABASE_URL: missing"
+            fi
+            if grep -qE '^POSTGRES_PASSWORD=.+' .env.deploy; then
+              echo "POSTGRES_PASSWORD: set"
+            else
+              echo "POSTGRES_PASSWORD: missing"
+            fi
             if grep -qE '^TWILIO_ACCOUNT_SID=.+' .env.deploy; then
               echo "Twilio SID: set (from Jenkins secret file)"
             else
@@ -189,11 +195,11 @@ Or leave a copy at /var/jenkins_home/doc-vault.env on the Jenkins host.''')
         script {
           sh '''
             set +e
-            echo "=== Stop previous DocVault containers ==="
-            docker compose -f docker-compose.yml down --remove-orphans || true
-            docker rm -f docvault-api docvault-web docvault-postgres docvault-redis docvault-celery-worker docvault-celery-beat docvault-nginx 2>/dev/null || true
-            docker rmi -f docvault-api:latest docvault-web:latest docvault-nginx:latest 2>/dev/null || true
-            echo "=== Remaining docvault images ==="
+            echo "=== Soft clean: keep running stack and :latest images until Deploy ==="
+            # Intentionally no docker compose down / docker rmi :latest here.
+            # Pre-build teardown caused long downtime and removed rollback tags before
+            # the new build succeeded. Deploy stops/recreates containers just-in-time.
+            echo "=== Current docvault images (kept for rollback) ==="
             docker images | grep docvault || echo none
             echo "=== Docker volumes ==="
             docker volume ls
@@ -201,7 +207,9 @@ Or leave a copy at /var/jenkins_home/doc-vault.env on the Jenkins host.''')
           if (params.RESET_POSTGRES) {
             sh '''
               set +e
-              echo "RESET_POSTGRES=true — deleting Postgres volume (this wipes users and documents)"
+              echo "RESET_POSTGRES=true — stopping stack then deleting Postgres volume (this wipes users and documents)"
+              docker compose -f docker-compose.yml stop postgres 2>/dev/null || true
+              docker rm -f docvault-postgres 2>/dev/null || true
               docker volume rm -f docvault_postgres_data postgres_data 2>/dev/null || true
               echo "=== Docker volumes after Postgres reset ==="
               docker volume ls
@@ -280,21 +288,26 @@ Or leave a copy at /var/jenkins_home/doc-vault.env on the Jenkins host.''')
           export WEB_HOST_PORT=${WEB_HOST_PORT:-8088}
           echo "Publishing Nginx on host port ${WEB_HOST_PORT}"
 
-          echo "=== DATABASE_URL after bash source ==="
-          echo "DATABASE_URL=${DATABASE_URL}"
-          echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
-          echo "=== .env file lines ==="
-          grep DATABASE_URL .env || true
-          grep POSTGRES_PASSWORD .env || true
-          echo "=== docker compose resolved env ==="
-          docker compose -f docker-compose.yml config | grep DATABASE_URL || true
-          docker compose -f docker-compose.yml config | grep POSTGRES_PASSWORD || true
+          if [ -n "${DATABASE_URL:-}" ]; then echo "DATABASE_URL: set"; else echo "DATABASE_URL: missing"; fi
+          if [ -n "${POSTGRES_PASSWORD:-}" ]; then echo "POSTGRES_PASSWORD: set"; else echo "POSTGRES_PASSWORD: missing"; fi
+          if docker compose -f docker-compose.yml config 2>/dev/null | grep -q 'DATABASE_URL:'; then
+            echo "compose DATABASE_URL: set"
+          else
+            echo "compose DATABASE_URL: missing or unresolved"
+          fi
+          if docker compose -f docker-compose.yml config 2>/dev/null | grep -q 'POSTGRES_PASSWORD'; then
+            echo "compose POSTGRES_PASSWORD: set"
+          else
+            echo "compose POSTGRES_PASSWORD: missing or unresolved"
+          fi
 
           echo "Freeing previous DocVault containers (if any)..."
           docker compose -f docker-compose.yml down --remove-orphans || true
           docker rm -f docvault-api docvault-web docvault-postgres docvault-redis docvault-celery-worker docvault-celery-beat docvault-nginx 2>/dev/null || true
 
           mkdir -p "${STORAGE_HOST_PATH:-/var/lib/docvault}"
+          # Backend runs as uid 10001 (docvault); ensure bind-mounted storage is writable.
+          chown -R 10001:10001 "${STORAGE_HOST_PATH:-/var/lib/docvault}" 2>/dev/null || chmod -R a+rwX "${STORAGE_HOST_PATH:-/var/lib/docvault}" || true
 
           echo "Starting Postgres first..."
           docker compose -f docker-compose.yml up -d --no-build postgres
@@ -342,10 +355,16 @@ Or leave a copy at /var/jenkins_home/doc-vault.env on the Jenkins host.''')
 
           echo "Starting API, web, Celery, and Nginx from the images just built..."
           docker compose -f docker-compose.yml up -d --no-build $RECREATE backend celery_worker celery_beat frontend nginx
-          echo "=== docvault-api DATABASE_URL inside container ==="
-          docker exec docvault-api printenv DATABASE_URL || true
-          echo "=== docvault-postgres POSTGRES_PASSWORD inside container ==="
-          docker exec docvault-postgres printenv POSTGRES_PASSWORD || true
+          if docker exec docvault-api printenv DATABASE_URL >/dev/null 2>&1; then
+            echo "docvault-api DATABASE_URL: set"
+          else
+            echo "docvault-api DATABASE_URL: missing"
+          fi
+          if docker exec docvault-postgres printenv POSTGRES_PASSWORD >/dev/null 2>&1; then
+            echo "docvault-postgres POSTGRES_PASSWORD: set"
+          else
+            echo "docvault-postgres POSTGRES_PASSWORD: missing"
+          fi
 
           echo "Waiting for API healthy via docker exec..."
           i=1

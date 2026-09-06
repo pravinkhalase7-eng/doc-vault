@@ -19,3 +19,11 @@
 - Excluded documents are omitted from search/chat
 - Expired share links fail
 - Deleted files cannot be downloaded
+
+
+## Auth tokens (browser)
+
+Access and refresh JWTs are currently stored in `localStorage` (`dv_access` / `dv_refresh`) for the SPA.
+A full httpOnly cookie migration is the preferred long-term hardening (mitigates XSS token theft) but is
+a larger auth rewrite than this pass. Until then: keep a tight CSP/XSS surface, rotate secrets if XSS is
+suspected, and prefer short access-token TTLs (already 15m).

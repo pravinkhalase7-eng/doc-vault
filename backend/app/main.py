@@ -29,7 +29,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Permissions-Policy"] = "camera=(self), microphone=()"
+        response.headers["Permissions-Policy"] = "camera=(self), microphone=(self)"
         return response
 
 
@@ -57,7 +57,10 @@ def create_app() -> FastAPI:
 
     @application.on_event("startup")
     async def startup() -> None:
+        from app.config import assert_production_secrets_ok
         from app.database import SessionLocal
+
+        assert_production_secrets_ok(settings)
 
         async with SessionLocal() as db:
             try:

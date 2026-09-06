@@ -19,13 +19,14 @@ def ok(data):
 
 
 def _provided_secret(request: Request) -> str:
+    """Accept ingest secret from headers only (never query string — it leaks via logs/Referer)."""
     header = request.headers.get("x-docvault-ingest-secret") or ""
     if header.strip():
         return header.strip()
     auth = request.headers.get("authorization") or ""
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
-    return (request.query_params.get("secret") or "").strip()
+    return ""
 
 
 async def _mail_from_request(request: Request):
