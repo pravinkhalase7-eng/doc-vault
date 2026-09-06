@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -54,6 +54,11 @@ class UserPreference(BaseModel):
     phone_number: Mapped[str | None] = mapped_column(String(32))
     notification_push: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     email_ingest_token: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
+    birth_name: Mapped[str | None] = mapped_column(String(200))
+    birth_date: Mapped[date | None] = mapped_column(Date)
+    birth_time: Mapped[str | None] = mapped_column(String(16))
+    birth_place: Mapped[str | None] = mapped_column(String(200))
+    astro_onboarding_dismissed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     user: Mapped[User] = relationship(back_populates="preferences")
 

@@ -92,6 +92,11 @@ class PreferenceOut(APIModel):
     timezone: str
     phone_number: str | None = None
     notification_push: bool = False
+    birth_name: str | None = None
+    birth_date: date | None = None
+    birth_time: str | None = None
+    birth_place: str | None = None
+    astro_onboarding_dismissed: bool = False
 
 
 class PreferenceUpdate(APIModel):
@@ -111,6 +116,11 @@ class PreferenceUpdate(APIModel):
     phone_number: str | None = None
     notification_push: bool | None = None
     onboarding_completed: bool | None = None
+    birth_name: str | None = None
+    birth_date: date | None = None
+    birth_time: str | None = None
+    birth_place: str | None = None
+    astro_onboarding_dismissed: bool | None = None
 
 
 class DocumentOut(APIModel):
@@ -254,6 +264,12 @@ class ChatRequest(APIModel):
     conversation_id: str | None = None
     language: str | None = None
     document_ids: list[str] = Field(default_factory=list, max_length=12)
+
+
+class AstroChatRequest(APIModel):
+    message: str = Field(min_length=1, max_length=4000)
+    conversation_id: str | None = None
+    language: str | None = None
 
 
 class ChatNoteRequest(APIModel):

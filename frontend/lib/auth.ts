@@ -22,6 +22,11 @@ export type Preferences = {
   timezone: string;
   phone_number?: string | null;
   notification_push?: boolean;
+  birth_name?: string | null;
+  birth_date?: string | null;
+  birth_time?: string | null;
+  birth_place?: string | null;
+  astro_onboarding_dismissed?: boolean;
 };
 
 export type User = {

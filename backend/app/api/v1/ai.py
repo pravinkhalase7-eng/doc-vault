@@ -3,13 +3,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.adk.root_agent import run_vault_agent
+from app.ai.astro import run_astro_agent
 from app.auth.service import get_current_user
 from app.database import get_db
 from app.models.ai import AIAuditLog, AIConversation, AIFeedback, AIMessage, AIProposal
 from app.models.document import Document, DocumentChunk
 from app.models.enums import GOAL_CHECKLISTS
 from app.models.user import User
-from app.schemas.common import ChatNoteRequest, ChatRequest, FeedbackRequest
+from app.schemas.common import AstroChatRequest, ChatNoteRequest, ChatRequest, FeedbackRequest
 from app.ai.adk.permission import ToolContext
 from app.ai.adk.tools import VaultTools
 from app.ai.vault_actions import execute_vault_proposal
@@ -30,6 +31,18 @@ async def chat(payload: ChatRequest, user: User = Depends(get_current_user), db:
         conversation_id=payload.conversation_id,
         language=payload.language,
         document_ids=payload.document_ids,
+    )
+    return ok(result)
+
+
+@router.post("/astro/chat")
+async def astro_chat(payload: AstroChatRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await run_astro_agent(
+        db,
+        user,
+        payload.message,
+        conversation_id=payload.conversation_id,
+        language=payload.language,
     )
     return ok(result)
 
@@ -97,13 +110,24 @@ async def save_note(payload: ChatNoteRequest, user: User = Depends(get_current_u
 
 
 @router.get("/conversations")
-async def conversations(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    rows = (
-        await db.scalars(
-            select(AIConversation).where(AIConversation.user_id == user.id).order_by(AIConversation.created_at.desc())
-        )
-    ).all()
-    return ok([{"id": c.id, "title": c.title, "created_at": c.created_at} for c in rows])
+async def conversations(
+    channel: str | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(AIConversation).where(AIConversation.user_id == user.id)
+    if channel:
+        stmt = stmt.where(AIConversation.channel == channel)
+    else:
+        # Default vault history excludes Astro threads.
+        stmt = stmt.where(AIConversation.channel == "vault")
+    rows = (await db.scalars(stmt.order_by(AIConversation.created_at.desc()))).all()
+    return ok(
+        [
+            {"id": c.id, "title": c.title, "created_at": c.created_at, "channel": getattr(c, "channel", "vault")}
+            for c in rows
+        ]
+    )
 
 
 @router.get("/conversations/{conversation_id}")

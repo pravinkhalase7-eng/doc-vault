@@ -12,6 +12,7 @@ class AIConversation(BaseModel):
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200), default="Ask My Vault")
     language: Mapped[str] = mapped_column(String(8), default="en")
+    channel: Mapped[str] = mapped_column(String(32), default="vault", nullable=False, index=True)
 
     messages: Mapped[list["AIMessage"]] = relationship(back_populates="conversation", cascade="all, delete-orphan")
 

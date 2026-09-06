@@ -47,6 +47,11 @@ async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(
                 "timezone": prefs.timezone if prefs else "Asia/Kolkata",
                 "phone_number": prefs.phone_number if prefs else None,
                 "notification_push": bool(prefs.notification_push) if prefs else False,
+                "birth_name": prefs.birth_name if prefs else None,
+                "birth_date": prefs.birth_date.isoformat() if prefs and prefs.birth_date else None,
+                "birth_time": prefs.birth_time if prefs else None,
+                "birth_place": prefs.birth_place if prefs else None,
+                "astro_onboarding_dismissed": bool(prefs.astro_onboarding_dismissed) if prefs else False,
             },
             "health": health,
         }
@@ -69,6 +74,14 @@ async def update_prefs(
             if not phone:
                 raise AppError("INVALID_PHONE", "Enter a valid Indian mobile, e.g. 98765 43210.", 400)
             data["phone_number"] = phone
+    if "birth_name" in data and data["birth_name"] == "":
+        data["birth_name"] = None
+    if "birth_time" in data and data["birth_time"] == "":
+        data["birth_time"] = None
+    if "birth_place" in data and data["birth_place"] == "":
+        data["birth_place"] = None
+    if "birth_date" in data and data["birth_date"] == "":
+        data["birth_date"] = None
     for key, value in data.items():
         if hasattr(prefs, key):
             setattr(prefs, key, value)

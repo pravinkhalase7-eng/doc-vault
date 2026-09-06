@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Settings,
   Shield,
+  Sparkles,
   Upload,
   UserRound,
 } from "lucide-react";
@@ -20,9 +21,13 @@ import { HeaderActions } from "@/components/header-actions";
 const nav = [
   { href: "/home", label: "Home", icon: Home },
   { href: "/collections", label: "Collections", icon: Folders },
-  { href: "/reels", label: "Reels", icon: Clapperboard },
+  { href: "/astro", label: "Astro", icon: Sparkles },
   { href: "/ai", label: "AI", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
+];
+
+const desktopExtra = [
+  { href: "/reels", label: "Reels", icon: Clapperboard },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -32,7 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const reservedDocumentRoutes = new Set(["upload", "scan"]);
   const isFileViewer = Boolean(documentSegment) && !reservedDocumentRoutes.has(documentSegment);
   const isScan = path === "/documents/scan" || path.startsWith("/documents/scan/");
-  const isChat = path === "/ai" || path.startsWith("/ai/");
+  const isChat = path === "/ai" || path.startsWith("/ai/") || path === "/astro" || path.startsWith("/astro/");
   const isReels = path === "/reels" || path.startsWith("/reels/");
   const immersive = isFileViewer || isChat || isReels || isScan;
   const hideChrome = isFileViewer || isScan;
@@ -51,7 +56,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <h1 className="text-2xl font-bold tracking-tight">DocVault</h1>
           </Link>
           <nav className="flex flex-1 flex-col gap-1">
-            {[...nav].map((item) => {
+            {[...nav, ...desktopExtra].map((item) => {
               const Icon = item.icon;
               const active = path.startsWith(item.href);
               return (

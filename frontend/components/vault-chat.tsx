@@ -380,7 +380,7 @@ export function VaultChat() {
     (async () => {
       let latestId: string | null = null;
       try {
-        const convos = await api<Array<{ id: string }>>("/ai/conversations");
+        const convos = await api<Array<{ id: string }>>("/ai/conversations?channel=vault");
         const latest = convos[0];
         if (latest) {
           const detail = await api<{
