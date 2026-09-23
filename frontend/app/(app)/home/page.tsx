@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, FileText, HeartPulse, Image as ImageIcon, ShieldAlert, Trash2 } from "lucide-react";
+import { ChevronRight, FileText, HeartPulse, Image as ImageIcon, Languages, ShieldAlert, Sparkles, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
@@ -142,6 +142,23 @@ export default function HomePage() {
           className="rounded-full bg-primary px-4 py-2 text-sm text-primary-foreground shadow-sm"
         >
           Ask My Vault
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Link href="/english" className="rounded-2xl border bg-card p-4 hover:bg-muted/40">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-600 text-white">
+            <Languages className="size-4" />
+          </span>
+          <p className="mt-3 font-semibold">English</p>
+          <p className="text-xs text-muted-foreground">Learn, practice, and correct your English</p>
+        </Link>
+        <Link href="/pavi" className="rounded-2xl border bg-card p-4 hover:bg-muted/40">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-white">
+            <Sparkles className="size-4" />
+          </span>
+          <p className="mt-3 font-semibold">Pavi</p>
+          <p className="text-xs text-muted-foreground">Personal AI for drafts, plans, and questions</p>
         </Link>
       </div>
 

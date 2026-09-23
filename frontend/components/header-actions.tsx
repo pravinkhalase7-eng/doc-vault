@@ -67,6 +67,12 @@ export function HeaderActions({ className }: { className?: string }) {
             <Settings className="size-4" />
             Settings
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/english")}>
+            English
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/pavi")}>
+            Pavi
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push("/notifications")}>
             Notifications
           </DropdownMenuItem>

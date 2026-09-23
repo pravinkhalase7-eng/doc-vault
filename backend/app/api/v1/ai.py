@@ -3,13 +3,16 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.adk.root_agent import run_vault_agent
+from app.ai.coaches import COACH_TITLE_SET, generate_coach_reply, title_for_mode
+from app.ai.privacy_gateway import check_ai_request
 from app.auth.service import get_current_user
+from app.config import get_settings
 from app.database import get_db
 from app.models.ai import AIAuditLog, AIConversation, AIFeedback, AIMessage, AIProposal
 from app.models.document import Document, DocumentChunk
-from app.models.enums import GOAL_CHECKLISTS
+from app.models.enums import AIOperation, AIPrivacyMode, GOAL_CHECKLISTS
 from app.models.user import User
-from app.schemas.common import ChatNoteRequest, ChatRequest, FeedbackRequest
+from app.schemas.common import ChatNoteRequest, ChatRequest, CoachRequest, FeedbackRequest
 from app.ai.adk.permission import ToolContext
 from app.ai.adk.tools import VaultTools
 from app.ai.vault_actions import execute_vault_proposal
@@ -32,6 +35,62 @@ async def chat(payload: ChatRequest, user: User = Depends(get_current_user), db:
         document_ids=payload.document_ids,
     )
     return ok(result)
+
+
+@router.post("/coach")
+async def coach(payload: CoachRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    prefs = user.preferences
+    lang = prefs.language.value if prefs else "en"
+    settings = get_settings()
+    external = bool(
+        prefs and prefs.external_ai_enabled and prefs.ai_privacy_mode != AIPrivacyMode.PRIVATE and settings.gemini_configured
+    )
+    title = title_for_mode(payload.mode)
+    conversation = None
+    if payload.conversation_id:
+        conversation = await db.get(AIConversation, payload.conversation_id)
+        if conversation and (conversation.user_id != user.id or conversation.title != title):
+            conversation = None
+    if not conversation:
+        conversation = AIConversation(user_id=user.id, title=title, language=lang)
+        db.add(conversation)
+        await db.flush()
+    history_rows = (
+        await db.scalars(
+            select(AIMessage)
+            .where(AIMessage.conversation_id == conversation.id)
+            .order_by(AIMessage.created_at.desc())
+            .limit(8)
+        )
+    ).all()
+    history = [(row.role, row.content) for row in reversed(list(history_rows))]
+    decision = await check_ai_request(db, user, AIOperation.CHAT, [], external_ai=external)
+    answer, used_external, model = await generate_coach_reply(
+        payload.mode,
+        payload.message,
+        history=history,
+        external_allowed=bool(decision.get("external_ai")),
+    )
+    db.add(AIMessage(conversation_id=conversation.id, role="user", content=payload.message, data_access={"coach": payload.mode}))
+    assistant = AIMessage(
+        conversation_id=conversation.id,
+        role="assistant",
+        content=answer,
+        model=model,
+        external_ai=used_external,
+        data_access={"coach": payload.mode, "used": [], "raw_document": False, "external_ai": used_external, "model": model},
+    )
+    db.add(assistant)
+    await db.commit()
+    return ok(
+        {
+            "conversation_id": conversation.id,
+            "message_id": assistant.id,
+            "answer": answer,
+            "external_ai": used_external,
+            "model": model,
+        }
+    )
 
 
 @router.post("/notes")
@@ -97,12 +156,19 @@ async def save_note(payload: ChatNoteRequest, user: User = Depends(get_current_u
 
 
 @router.get("/conversations")
-async def conversations(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def conversations(
+    kind: str | None = None, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
     rows = (
         await db.scalars(
             select(AIConversation).where(AIConversation.user_id == user.id).order_by(AIConversation.created_at.desc())
         )
     ).all()
+    if kind in ("english", "pavi"):
+        wanted = title_for_mode(kind)
+        rows = [row for row in rows if row.title == wanted]
+    elif kind != "all":
+        rows = [row for row in rows if row.title not in COACH_TITLE_SET]
     return ok([{"id": c.id, "title": c.title, "created_at": c.created_at} for c in rows])
 
 

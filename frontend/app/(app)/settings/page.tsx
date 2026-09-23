@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, CalendarClock, Camera, ChevronRight, Clapperboard, Copy, Download, Folders, HelpCircle, Hourglass, Lock, LogOut, Mail, MessageSquare, Moon, Phone, Share2, Shield, Sun, Trash2, UserRound, Users } from "lucide-react";
+import { Bell, CalendarClock, Camera, ChevronRight, Clapperboard, Copy, Download, Folders, HelpCircle, Hourglass, Languages, Lock, LogOut, Mail, MessageSquare, Moon, Phone, Share2, Shield, Sparkles, Sun, Trash2, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { api } from "@/lib/api";
@@ -414,6 +414,8 @@ export default function SettingsPage() {
       <ShareIntoVaultHint />
 
       <Group>
+        <Row href="/english" icon={Languages} tone="bg-emerald-600" label="English" hint="Learn English and get corrections" />
+        <Row href="/pavi" icon={Sparkles} tone="bg-primary" label="Pavi" hint="Personal AI for drafts and everyday help" />
         <Row href="/ai" icon={MessageSquare} tone="bg-primary" label="Chats" hint="Ask My Vault" />
         <Row href="/reels" icon={Clapperboard} tone="bg-primary" label="Reels" hint="Swipe through your files" />
         <Row href="/goals" icon={UserRound} tone="bg-primary" label="Life goals" />

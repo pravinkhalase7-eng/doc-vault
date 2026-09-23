@@ -31,7 +31,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const documentSegment = path.startsWith("/documents/") ? path.slice("/documents/".length).split("/")[0] : "";
   const reservedDocumentRoutes = new Set(["upload", "scan"]);
   const isFileViewer = Boolean(documentSegment) && !reservedDocumentRoutes.has(documentSegment);
-  const isChat = path === "/ai" || path.startsWith("/ai/");
+  const isChat = path === "/ai" || path.startsWith("/ai/") || path === "/english" || path.startsWith("/english/") || path === "/pavi" || path.startsWith("/pavi/");
   const isReels = path === "/reels" || path.startsWith("/reels/");
   const immersive = isFileViewer || isChat || isReels;
 

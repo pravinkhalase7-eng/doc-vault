@@ -256,6 +256,12 @@ class ChatRequest(APIModel):
     document_ids: list[str] = Field(default_factory=list, max_length=12)
 
 
+class CoachRequest(APIModel):
+    message: str = Field(min_length=1, max_length=4000)
+    mode: str = Field(pattern="^(english|pavi)$")
+    conversation_id: str | None = None
+
+
 class ChatNoteRequest(APIModel):
     user_content: str = Field(min_length=1, max_length=4000)
     assistant_content: str = Field(min_length=1, max_length=4000)
