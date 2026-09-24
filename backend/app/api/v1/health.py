@@ -45,6 +45,7 @@ async def health_ai():
         "data": {
             "gemini_configured": settings.gemini_configured,
             "model": settings.gemini_model if settings.gemini_configured else None,
+            "google_tts_configured": settings.google_tts_configured,
             "local_fallback": True,
         },
     }

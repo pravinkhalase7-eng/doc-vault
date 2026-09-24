@@ -260,6 +260,12 @@ class CoachRequest(APIModel):
     message: str = Field(min_length=1, max_length=4000)
     mode: str = Field(pattern="^(english|pavi)$")
     conversation_id: str | None = None
+    speech_mode: bool = False
+
+
+class SpeakRequest(APIModel):
+    text: str = Field(min_length=1, max_length=2000)
+    language: str | None = "en-IN"
 
 
 class ChatNoteRequest(APIModel):

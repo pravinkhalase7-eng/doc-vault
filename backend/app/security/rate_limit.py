@@ -19,6 +19,8 @@ LIMITS = {
     "/api/v1/ingest/email": (30, 300),
     "/api/v1/ingest/poll": (6, 60),
     "/api/v1/ai/chat": (20, 60),
+    "/api/v1/ai/coach": (20, 60),
+    "/api/v1/ai/speak": (30, 60),
 }
 
 

@@ -96,6 +96,30 @@ export async function apiBlob(path: string, retry = true): Promise<Blob> {
   return res.blob();
 }
 
+export async function apiBlobPost(path: string, body: unknown, retry = true): Promise<Blob> {
+  const { access } = getTokens();
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (access) headers.set("Authorization", `Bearer ${access}`);
+  const res = await fetch(`${API_URL}/api/v1${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401 && retry) {
+    const ok = await refreshTokens();
+    if (ok) return apiBlobPost(path, body, false);
+  }
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new ApiError(
+      json.error?.code || "ERROR",
+      apiErrorMessage(json),
+      res.status,
+    );
+  }
+  return res.blob();
+}
+
 function apiErrorMessage(json: {
   error?: { message?: string };
   detail?: unknown;

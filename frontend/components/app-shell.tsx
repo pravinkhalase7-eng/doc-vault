@@ -115,7 +115,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {!isFileViewer && (
+      {!isFileViewer && !isChat && (
         <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-background/95 p-2 backdrop-blur md:hidden">
           {nav.map((item) => {
             const Icon = item.icon;

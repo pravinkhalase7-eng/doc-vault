@@ -81,6 +81,7 @@ class Settings(BaseSettings):
 
     google_client_id: str = ""
     google_client_secret: str = ""
+    google_tts_api_key: str = ""
 
     # Inbound email ingest (forward a PDF to a private address).
     # Example domain: in.docvault.doxstation.com  Address: {token}@{domain}
@@ -94,7 +95,13 @@ class Settings(BaseSettings):
     imap_password: str = ""
     imap_folder: str = "INBOX"
 
-    @field_validator("gemini_api_key", "google_client_id", "google_client_secret", mode="before")
+    @field_validator(
+        "gemini_api_key",
+        "google_client_id",
+        "google_client_secret",
+        "google_tts_api_key",
+        mode="before",
+    )
     @classmethod
     def empty_key(cls, value: str | None) -> str:
         return value or ""
@@ -114,6 +121,10 @@ class Settings(BaseSettings):
     @property
     def gemini_configured(self) -> bool:
         return bool(self.gemini_api_key)
+
+    @property
+    def google_tts_configured(self) -> bool:
+        return bool(self.google_tts_api_key.strip())
 
     @property
     def twilio_configured(self) -> bool:

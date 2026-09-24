@@ -44,16 +44,40 @@ export function speechLang(code?: string) {
 
 export function speakText(text: string, lang = "en-IN") {
   if (typeof window === "undefined" || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
+  stopSpeaking();
   const cleaned = text.replace(/\n+/g, ". ").replace(/\s+/g, " ").trim();
   if (!cleaned) return;
   const utter = new SpeechSynthesisUtterance(cleaned.slice(0, 700));
   utter.lang = lang;
-  utter.rate = 1.02;
+  utter.rate = 0.95;
   window.speechSynthesis.speak(utter);
 }
 
+let cloudAudio: HTMLAudioElement | null = null;
+
 export function stopSpeaking() {
-  if (typeof window === "undefined" || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
+  if (typeof window === "undefined") return;
+  window.speechSynthesis?.cancel();
+  if (cloudAudio) {
+    cloudAudio.pause();
+    cloudAudio.removeAttribute("src");
+    cloudAudio.load();
+    cloudAudio = null;
+  }
+}
+
+export async function playAudioBlob(blob: Blob) {
+  stopSpeaking();
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  cloudAudio = audio;
+  audio.onended = () => {
+    URL.revokeObjectURL(url);
+    if (cloudAudio === audio) cloudAudio = null;
+  };
+  audio.onerror = () => {
+    URL.revokeObjectURL(url);
+    if (cloudAudio === audio) cloudAudio = null;
+  };
+  await audio.play();
 }

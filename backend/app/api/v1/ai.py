@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.adk.root_agent import run_vault_agent
 from app.ai.coaches import COACH_TITLE_SET, generate_coach_reply, title_for_mode
+from app.ai.google_tts import google_tts_configured, synthesize_speech
 from app.ai.privacy_gateway import check_ai_request
 from app.auth.service import get_current_user
 from app.config import get_settings
@@ -12,7 +14,7 @@ from app.models.ai import AIAuditLog, AIConversation, AIFeedback, AIMessage, AIP
 from app.models.document import Document, DocumentChunk
 from app.models.enums import AIOperation, AIPrivacyMode, GOAL_CHECKLISTS
 from app.models.user import User
-from app.schemas.common import ChatNoteRequest, ChatRequest, CoachRequest, FeedbackRequest
+from app.schemas.common import ChatNoteRequest, ChatRequest, CoachRequest, FeedbackRequest, SpeakRequest
 from app.ai.adk.permission import ToolContext
 from app.ai.adk.tools import VaultTools
 from app.ai.vault_actions import execute_vault_proposal
@@ -65,7 +67,7 @@ async def coach(payload: CoachRequest, user: User = Depends(get_current_user), d
     ).all()
     history = [(row.role, row.content) for row in reversed(list(history_rows))]
     decision = await check_ai_request(db, user, AIOperation.CHAT, [], external_ai=external)
-    answer, used_external, model = await generate_coach_reply(
+    answer, spoken, used_external, model = await generate_coach_reply(
         payload.mode,
         payload.message,
         history=history,
@@ -78,7 +80,15 @@ async def coach(payload: CoachRequest, user: User = Depends(get_current_user), d
         content=answer,
         model=model,
         external_ai=used_external,
-        data_access={"coach": payload.mode, "used": [], "raw_document": False, "external_ai": used_external, "model": model},
+        data_access={
+            "coach": payload.mode,
+            "used": [],
+            "raw_document": False,
+            "external_ai": used_external,
+            "model": model,
+            "spoken": spoken,
+            "speech_mode": payload.speech_mode,
+        },
     )
     db.add(assistant)
     await db.commit()
@@ -87,10 +97,19 @@ async def coach(payload: CoachRequest, user: User = Depends(get_current_user), d
             "conversation_id": conversation.id,
             "message_id": assistant.id,
             "answer": answer,
+            "spoken": spoken,
             "external_ai": used_external,
             "model": model,
+            "google_tts": google_tts_configured(),
         }
     )
+
+
+@router.post("/speak")
+async def speak(payload: SpeakRequest, user: User = Depends(get_current_user)):
+    del user
+    audio, mime = await synthesize_speech(payload.text, payload.language or "en-IN")
+    return Response(content=audio, media_type=mime, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/notes")
