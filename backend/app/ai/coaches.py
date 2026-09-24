@@ -310,6 +310,9 @@ _INDIC_STRONG = frozenset(
         "shikaycha",
         "dhanyavad",
         "shukriya",
+        "sutti",
+        "chutti",
+        "chhutti",
     }
 )
 _INDIC_WORDS = _INDIC_STRONG | {
@@ -446,6 +449,154 @@ _INDIC_PHRASES: list[tuple[re.Pattern[str], str, str | None, str]] = [
 ]
 
 
+_DEVANAGARI_GLOSS = {
+    "उद्या": "udya",
+    "आज": "aaj",
+    "काल": "kal",
+    "सुट्टी": "sutti",
+    "शाळा": "school",
+    "ऑफिस": "office",
+    "मला": "mala",
+    "आहे": "aahe",
+    "घर": "ghar",
+    "घरी": "ghari",
+    "भूक": "bhook",
+    "तहान": "tahaan",
+    "थक": "thakla",
+    "मी": "mi",
+}
+
+_TIME_GLOSS = {
+    "udya": "tomorrow",
+    "udyaa": "tomorrow",
+    "udyaacha": "tomorrow",
+    "aaj": "today",
+    "aajchya": "today",
+    "kal": "yesterday",
+    "parva": "the day after tomorrow",
+}
+_PLACE_GLOSS = {
+    "school": "school",
+    "skool": "school",
+    "college": "college",
+    "office": "office",
+    "kacheri": "office",
+    "ghar": "home",
+    "ghari": "home",
+    "gharala": "home",
+    "market": "market",
+    "bazaar": "market",
+    "baajar": "market",
+}
+_EVENT_GLOSS = {
+    "sutti": "holiday",
+    "suti": "holiday",
+    "chutti": "holiday",
+    "chhutti": "holiday",
+    "holiday": "holiday",
+    "leave": "leave",
+    "exam": "exam",
+    "pariksha": "exam",
+    "meeting": "meeting",
+    "sabha": "meeting",
+    "kaam": "work",
+}
+_MOTION_GLOSS = {
+    "jatoy": "going",
+    "jato": "going",
+    "jaatoy": "going",
+    "jail": "going",
+    "gelo": "went",
+    "geli": "went",
+    "gele": "went",
+    "yetoy": "coming",
+    "aalo": "came",
+    "aali": "came",
+}
+
+
+def _romanize_indic(text: str) -> str:
+    out = text or ""
+    for dev, roman in _DEVANAGARI_GLOSS.items():
+        out = out.replace(dev, f" {roman} ")
+    return re.sub(r"\s+", " ", out).strip()
+
+
+def _first_gloss(tokens: list[str], table: dict[str, str]) -> str | None:
+    for token in tokens:
+        if token in table:
+            return table[token]
+    return None
+
+
+def _place_phrase(place: str) -> str:
+    if place == "home":
+        return "home"
+    if place in {"office", "market"}:
+        return f"the {place}"
+    return place
+
+
+def _compose_indic_english(text: str) -> tuple[str, str, str] | None:
+    tokens = re.findall(r"[a-zA-Z]+", _romanize_indic(text).lower())
+    if not tokens:
+        return None
+    time = _first_gloss(tokens, _TIME_GLOSS)
+    place = _first_gloss(tokens, _PLACE_GLOSS)
+    event = _first_gloss(tokens, _EVENT_GLOSS)
+    motion = _first_gloss(tokens, _MOTION_GLOSS)
+    bits: list[str] = []
+    if "udya" in tokens or "udyaa" in tokens:
+        bits.append("udya = tomorrow")
+    elif time:
+        bits.append(f"time = {time}")
+    if "sutti" in tokens or "chutti" in tokens or "chhutti" in tokens or "suti" in tokens:
+        bits.append("sutti = holiday / day off")
+    if place:
+        bits.append(f"{place} stays {place} in English")
+    why = "; ".join(bits) if bits else "I turned your Marathi/Hindi words into a natural English sentence."
+
+    when = f" {time}" if time else ""
+    if event in {"holiday", "leave"} and place == "school":
+        english = f"I have a school holiday{when}." if time else "I have a school holiday."
+        also = f"I don't have school{when}." if time else "I don't have school today."
+        return english, also, why
+    if event in {"holiday", "leave"} and place == "office":
+        english = f"I have a day off from the office{when}."
+        also = f"I'm not going to the office{when}."
+        return english, also, why
+    if event in {"holiday", "leave"}:
+        english = f"I have a holiday{when}." if time else "I have a day off."
+        also = f"I have a day off{when}." if time else "I have a day off today."
+        return english, also, why
+    if event == "exam":
+        target = f" at {_place_phrase(place)}" if place else ""
+        english = f"I have an exam{target}{when}."
+        return english, None, why
+    if motion in {"going", "coming"} and place:
+        dest = "home" if place == "home" else f"to {_place_phrase(place)}"
+        english = f"I am {motion} {dest}{when}."
+        also = f"I'm {motion} {dest}{when}."
+        return english, also, why
+    if motion == "went" and place:
+        dest = "home" if place == "home" else f"to {_place_phrase(place)}"
+        english = f"I went {dest}{when}."
+        return english, None, why
+    if place and time and not event:
+        dest = "home" if place == "home" else _place_phrase(place)
+        if place == "home":
+            english = f"I am going home{when}."
+        else:
+            english = f"I have to go to {dest}{when}."
+        also = f"I'm going to {dest}{when}." if place != "home" else f"I'm going home{when}."
+        return english, also, why
+    if time and not place and not event:
+        english = f"It is {time}."
+        also = f"That's {time}."
+        return english, also, why
+    return None
+
+
 def _indic_keyword_lesson(text: str) -> tuple[str, str] | None:
     low = (text or "").lower()
     language = _indic_label(text)
@@ -484,18 +635,18 @@ def other_language_english_reply(message: str) -> tuple[str, str] | None:
     keyword = _indic_keyword_lesson(raw)
     if keyword:
         return keyword
+    composed = _compose_indic_english(raw)
+    if composed:
+        english, also, why = composed
+        return _other_language_lesson(english, also=also, language=_indic_label(raw), why=why)
     language = _indic_label(raw)
     display = (
-        f"That looks like {language}, not English.\n\n"
-        "I’ll teach the English for what you mean. For example:\n"
-        "mala bhook lagali → I am feeling hungry.\n\n"
-        "Say the same idea again, or mix in one English word (hungry, tired, office), "
-        "and I’ll give you a full sentence to say out loud."
+        f"That looks like {language}.\n\n"
+        "In English, start with I, then the time (today / tomorrow), then what you need to say.\n\n"
+        "Example:\nmala udya school la sutti aahe → I have a school holiday tomorrow.\n\n"
+        "Say this out loud:\nI have a school holiday tomorrow."
     )
-    spoken = (
-        "That looks like Marathi or Hindi. "
-        "Tell me the idea — hungry, tired, or going to the office — and I’ll give you the English."
-    )
+    spoken = "In English, say: I have a school holiday tomorrow. Use I, then tomorrow, then the rest."
     return display, spoken
 
 
@@ -700,6 +851,8 @@ def _gemini_is_weak(reply: str, learner: str, *, asked: bool, question: bool) ->
     if _sentence_still_wrong(reply):
         return True
     if looks_like_indic(learner) and "that sounds natural" in lowered:
+        return True
+    if "mix in one english word" in lowered or "say the same idea again" in lowered:
         return True
     original = re.sub(r"\s+", " ", (learner or "").strip()).lower().rstrip(".")
     if asked and original and original in lowered and "went to the market" not in lowered:

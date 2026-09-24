@@ -118,6 +118,21 @@ def test_english_teaches_marathi_hunger():
     assert "i'm hungry" in reply.lower()
 
 
+def test_english_teaches_marathi_school_holiday():
+    reply, spoken = local_english_reply("mala udya school la sutti aahe")
+    lowered = reply.lower()
+    assert "mix in one english word" not in lowered
+    assert "feeling hungry" not in lowered
+    assert "tomorrow" in lowered
+    assert "school" in lowered
+    assert "holiday" in lowered or "don't have school" in lowered
+    assert "i have a school holiday tomorrow" in lowered
+    assert "tomorrow" in spoken.lower()
+    today, _ = local_english_reply("mala school la sutti aahe")
+    assert "hungry" not in today.lower()
+    assert "school" in today.lower()
+
+
 def test_pcm_wraps_as_wav():
     framed = pcm16_to_wav(b"\x00\x00" * 80)
     assert framed[:4] == b"RIFF"
