@@ -6,6 +6,7 @@ from app.ai.coaches import (
     local_pavi_reply,
     title_for_mode,
 )
+from app.ai.google_tts import pcm16_to_wav
 
 
 def test_coach_titles():
@@ -36,7 +37,7 @@ def test_english_correction_reply_has_sections():
     assert "better sentence" in lowered or "corrected" in lowered
     assert "discuss" in lowered
     assert "please" in lowered
-    assert "repeat" in spoken.lower() or "better english" in spoken.lower()
+    assert "say it with me" in spoken.lower() or "went to the market" in spoken.lower()
 
 
 def test_english_teaches_got_to_market():
@@ -55,3 +56,9 @@ def test_pavi_intro_and_vault_handoff():
     assert "pavi" in reply.lower()
     assert "ask my vault" in reply.lower()
     assert "pavi" in spoken.lower()
+
+
+def test_pcm_wraps_as_wav():
+    framed = pcm16_to_wav(b"\x00\x00" * 80)
+    assert framed[:4] == b"RIFF"
+    assert pcm16_to_wav(framed)[:4] == b"RIFF"

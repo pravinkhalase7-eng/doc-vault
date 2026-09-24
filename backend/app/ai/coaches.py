@@ -141,8 +141,12 @@ def apply_english_fixes(text: str) -> tuple[str, list[str]]:
 
 def spoken_english(corrected: str, notes: list[str]) -> str:
     line = (corrected or "").rstrip(".")
-    why = notes[0] if notes else "Listen and repeat."
-    return f"Better English: {line}. {why} Repeat after me: {line}."
+    why = notes[0] if notes else "Listen once, then say it with me."
+    return (
+        f"Nice try. A more natural way is: {line}. "
+        f"{why} "
+        f"Now say it with me: {line}."
+    )
 
 
 def local_english_reply(message: str) -> tuple[str, str]:

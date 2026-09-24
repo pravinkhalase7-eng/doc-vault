@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_tts_api_key: str = ""
+    gemini_tts_model: str = "gemini-3.1-flash-tts-preview"
+    gemini_tts_voice: str = "Kore"
 
     # Inbound email ingest (forward a PDF to a private address).
     # Example domain: in.docvault.doxstation.com  Address: {token}@{domain}
@@ -124,7 +126,7 @@ class Settings(BaseSettings):
 
     @property
     def google_tts_configured(self) -> bool:
-        return bool(self.google_tts_api_key.strip())
+        return bool(self.google_tts_api_key.strip()) or bool(self.gemini_api_key.strip())
 
     @property
     def twilio_configured(self) -> bool:
