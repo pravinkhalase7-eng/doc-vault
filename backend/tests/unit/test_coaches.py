@@ -68,6 +68,20 @@ def test_english_question_does_not_ask_what_happened_next():
     assert "happened next" not in follow_spoken.lower()
 
 
+def test_english_how_to_learn_gets_a_real_plan():
+    reply, spoken = local_english_reply("how to learn english")
+    lowered = reply.lower()
+    assert "tell me a little more about what you want to know" not in lowered
+    assert "good question" not in lowered
+    assert "10 minutes" in lowered
+    assert "sentence" in lowered
+    assert "every day" in spoken.lower()
+    want, _ = local_english_reply("I want to learn english")
+    assert "10 minutes" in want.lower()
+    improve, _ = local_english_reply("how can I improve my english?")
+    assert "10 minutes" in improve.lower()
+
+
 def test_pcm_wraps_as_wav():
     framed = pcm16_to_wav(b"\x00\x00" * 80)
     assert framed[:4] == b"RIFF"

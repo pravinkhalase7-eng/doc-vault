@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Mic, SendHorizonal, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiBlobPost } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import {
@@ -53,8 +52,6 @@ export function CoachChat({
   initials: string;
 }) {
   const router = useRouter();
-  const { user } = useAuth();
-  const cloud = Boolean(user?.preferences?.external_ai_enabled);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [thread, setThread] = useState<Line[]>([]);
   const [draft, setDraft] = useState("");
@@ -270,7 +267,7 @@ export function CoachChat({
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-semibold leading-tight">{title}</p>
           <p className="truncate text-[12px] text-muted-foreground">
-            {busy ? "typing…" : listening ? "listening…" : speechMode ? "Speech on · tap mic to talk" : cloud ? "Cloud AI · Gemini" : hint}
+            {busy ? "typing…" : listening ? "listening…" : speechMode ? "Speech on · tap mic to talk" : hint}
           </p>
         </div>
         {mode === "english" ? (

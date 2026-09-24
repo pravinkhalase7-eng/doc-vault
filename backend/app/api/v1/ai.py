@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.ai import AIAuditLog, AIConversation, AIFeedback, AIMessage, AIProposal
 from app.models.document import Document, DocumentChunk
-from app.models.enums import AIOperation, AIPrivacyMode, GOAL_CHECKLISTS
+from app.models.enums import AIOperation, GOAL_CHECKLISTS
 from app.models.user import User
 from app.schemas.common import ChatNoteRequest, ChatRequest, CoachRequest, FeedbackRequest, SpeakRequest
 from app.ai.adk.permission import ToolContext
@@ -44,9 +44,8 @@ async def coach(payload: CoachRequest, user: User = Depends(get_current_user), d
     prefs = user.preferences
     lang = prefs.language.value if prefs else "en"
     settings = get_settings()
-    external = bool(
-        prefs and prefs.external_ai_enabled and prefs.ai_privacy_mode != AIPrivacyMode.PRIVATE and settings.gemini_configured
-    )
+    # Coaches never send vault files. Use Gemini whenever the server has a key so
+    # English/Pavi can talk like a tutor even if Privacy Center Cloud AI is off.
     title = title_for_mode(payload.mode)
     conversation = None
     if payload.conversation_id:
@@ -66,12 +65,13 @@ async def coach(payload: CoachRequest, user: User = Depends(get_current_user), d
         )
     ).all()
     history = [(row.role, row.content) for row in reversed(list(history_rows))]
-    decision = await check_ai_request(db, user, AIOperation.CHAT, [], external_ai=external)
+    coach_cloud = settings.gemini_configured
+    await check_ai_request(db, user, AIOperation.CHAT, [], external_ai=False)
     answer, spoken, used_external, model = await generate_coach_reply(
         payload.mode,
         payload.message,
         history=history,
-        external_allowed=bool(decision.get("external_ai")),
+        external_allowed=coach_cloud,
     )
     db.add(AIMessage(conversation_id=conversation.id, role="user", content=payload.message, data_access={"coach": payload.mode}))
     assistant = AIMessage(

@@ -15,26 +15,31 @@ COACH_MODES = (ENGLISH_MODE, PAVI_MODE)
 COACH_TITLES = {ENGLISH_MODE: "English", PAVI_MODE: "Pavi"}
 COACH_TITLE_SET = frozenset(COACH_TITLES.values())
 
-ENGLISH_INSTRUCTION = """You are a patient English tutor for adult learners (often Indian English speakers).
+ENGLISH_INSTRUCTION = """You are a warm, effective English tutor chatting with one adult learner (often an Indian English speaker). Talk like a real teacher on WhatsApp — human, specific, and useful. Never sound like a form, a bot, or a “tell me more” stall.
 
-First decide what they need:
-- QUESTION (what / why / how / when / where / who, or a ?): answer the question in simple English. Then, only if their wording was off, show a better way to ask it. Do not ignore the question.
-- SENTENCE TO CORRECT: show a natural corrected sentence, 1–3 short reasons, and one line to say out loud.
-- CHAT / PRACTICE: reply as a conversation partner, then lightly correct slips.
+Always answer the actual message first. Then keep the conversation going with ONE related next step.
 
-Never use a canned closer like “what happened next”, “tell me one more sentence about this”, or “your turn” after every message.
+If they ask how to learn / improve / speak English: give a short real plan (daily speaking, real-life sentences, correction + repeat). Invite them to send one sentence from their day. Do not ask what they mean.
+
+If they ask a question: answer it. Give examples. Then offer one practice line. Do not reply with only “Good question” or “tell me a little more”.
+
+If they send a sentence to correct: show a natural version, 1–3 short reasons, and one line to say out loud.
+
+If they are chatting: reply as a conversation partner, then lightly fix slips.
+
+Never use canned closers: “what happened next”, “tell me one more sentence about this”, “your turn”, “tell me a little more about what you want to know”.
 Only ask what happened next if they were clearly telling a story.
 Do not mention DocVault, documents, or files unless they ask.
 
 End with a single line in this exact form:
-SPEAK: <one or two spoken sentences. If they asked a question, speak the answer. If they gave a sentence to practice, speak the corrected line.>
+SPEAK: <one or two spoken sentences that actually answer them.>
 """
 
-PAVI_INSTRUCTION = """You are Pavi, a warm personal AI assistant.
-Help with everyday questions, drafting messages, planning, explaining ideas, and light coaching.
+PAVI_INSTRUCTION = """You are Pavi, a warm personal AI assistant chatting like a helpful colleague.
 
 Rules:
-- Be concise, practical, and kind.
+- Answer the actual request. Be concise, practical, and kind.
+- Do not stall with “tell me more” until you have given a useful first answer or a draft they can use.
 - If they want English practice or grammar correction, help briefly, then mention they can open English for daily speaking practice.
 - If they ask about files, passports, PDFs, or their vault, tell them to use Ask My Vault. Do not invent document facts.
 - Do not claim to have seen their documents.
@@ -144,13 +149,42 @@ _QUESTION_START = re.compile(
 )
 
 
+_LEARN_ENGLISH = re.compile(
+    r"\b(?:how\s+(?:do\s+i|can\s+i|to)|i\s+want\s+to|want\s+to|help\s+me|teach\s+me|"
+    r"ways?\s+to)\b.{0,50}\b(?:learn|improve|practi[cs]e|speak|study)\b.{0,30}\benglish\b"
+    r"|\b(?:learn|improve|practi[cs]e|speak|study)\s+english\b",
+    re.I,
+)
+
+
 def looks_like_question(text: str) -> bool:
     cleaned = (text or "").strip()
     if not cleaned:
         return False
     if "?" in cleaned:
         return True
+    if _LEARN_ENGLISH.search(cleaned):
+        return True
     return bool(_QUESTION_START.match(cleaned))
+
+
+def _learn_english_reply() -> tuple[str, str]:
+    display = (
+        "We can do this together — a little every day works better than a big course.\n\n"
+        "A simple plan:\n"
+        "1. Speak for 10 minutes a day. Short is fine.\n"
+        "2. Use English from real life: market, office, family, messages.\n"
+        "3. Send me one sentence. I’ll correct it and give you a natural line.\n"
+        "4. Say that line out loud twice. Repeat useful sentences until they feel easy.\n\n"
+        "Don’t try to learn everything. Start with what you need this week.\n\n"
+        "Send me a sentence from today — work, shopping, or a message you want to write. "
+        "I’ll reply like a teacher: correct it, explain why, and give you something to practise."
+    )
+    spoken = (
+        "A good way to learn English is a little every day. "
+        "Send me one sentence from your day, and I’ll help you say it more naturally."
+    )
+    return display, spoken
 
 
 def spoken_english(corrected: str, notes: list[str]) -> str:
@@ -165,9 +199,11 @@ def spoken_english(corrected: str, notes: list[str]) -> str:
 
 def _local_question_reply(learner: str, corrected: str, notes: list[str]) -> tuple[str, str]:
     lowered = learner.lower().strip().rstrip("?.! ")
+    if _LEARN_ENGLISH.search(learner):
+        return _learn_english_reply()
     if lowered in {"how are you", "how r you", "how are u"}:
         display = (
-            "I'm doing well, thank you.\n\n"
+            "I'm doing well, thank you. How are you today?\n\n"
             "You can answer the same way:\n"
             "I'm good, thank you. How are you?"
         )
@@ -185,31 +221,44 @@ def _local_question_reply(learner: str, corrected: str, notes: list[str]) -> tup
         display = (
             "Use “a” the first time you mention something, and “the” when we both know which one.\n\n"
             "I saw a dog. The dog was brown.\n"
-            "I went to the market. (a specific, usual place)"
+            "I went to the market. (a specific, usual place)\n\n"
+            "Try one: write a sentence with a, then a second sentence with the."
         )
         spoken = "Use a the first time. Use the when we both know which one. I went to the market."
         return display, spoken
-    if re.search(r"\b(how do i say|how to say|what is the meaning|what does .* mean)\b", lowered):
+    if re.search(r"\b(how do i say|how to say)\b", lowered):
         display = (
-            f"Ask it like this:\n{corrected}\n\n"
-            "Tell me the word or sentence you want, and I'll give you a simple English version to say out loud."
+            "Happy to help you say it naturally.\n\n"
+            "Type the idea in your own words — even mixed with Hindi is fine — "
+            "and I’ll give you a simple English sentence to say out loud."
         )
-        spoken = "Tell me the word or sentence you want, and I'll give you a simple way to say it."
+        spoken = "Type the idea in your own words, and I’ll give you a simple English sentence to say."
+        return display, spoken
+    if re.search(r"\b(what is the meaning|what does .+ mean|meaning of)\b", lowered):
+        display = (
+            f"You asked: {corrected}\n\n"
+            "Send the word or short phrase on its own, and I’ll explain it in simple English "
+            "with one example you can say at work or at home."
+        )
+        spoken = "Send the word you want, and I’ll explain it in simple English with one example."
         return display, spoken
     polish = ""
     if notes:
         bullets = "\n".join(f"- {note}" for note in notes)
-        polish = f"\n\nA natural way to ask this:\n{corrected}\n\nWhy:\n{bullets}"
+        polish = f"A natural way to ask this:\n{corrected}\n\nWhy:\n{bullets}\n\n"
     display = (
-        f"Good question.{polish}\n\n"
-        "Here's a short answer in simple English: tell me a little more about what you want to know — "
-        "a word, a sentence, or a situation — and I'll explain it clearly."
+        f"{polish}"
+        f"You asked: {corrected}\n\n"
+        "Let’s use this like a real conversation. Tell me the situation in one line — "
+        "work, shopping, travel, or a message you need to send — and I’ll give you the English to use, "
+        "plus a line to practise out loud.\n\n"
+        "Or send any sentence from today and I’ll help you say it more naturally."
     )
     spoken = (
-        f"Good question. A natural way to ask is: {corrected.rstrip('.')}. "
-        "Tell me a bit more and I'll explain it in simple English."
+        f"You can ask it like this: {corrected.rstrip('.')}. "
+        "Tell me the situation — work, shopping, or a message — and I’ll give you the English to use."
         if notes
-        else "Good question. Tell me a bit more and I'll explain it in simple English."
+        else "Tell me the situation — work, shopping, or a message — and I’ll give you the English to use."
     )
     return display, spoken
 
@@ -220,12 +269,14 @@ def local_english_reply(message: str) -> tuple[str, str]:
     lowered = learner.lower()
     if not learner or lowered in {"hi", "hello", "hey", "good morning", "good evening", "help"}:
         display = (
-            "Hi — I'm your English coach.\n\n"
-            "Ask me a question, or type a sentence and I'll help you say it naturally. "
-            "You can also say “let's practice a job interview”."
+            "Hi — I’m your English coach. Talk to me the way you would talk to a teacher.\n\n"
+            "Ask anything, send a sentence from your day, or say “let’s practise a job interview”. "
+            "I’ll answer, correct slips, and give you a line to say out loud."
         )
-        spoken = "Hi. I'm your English coach. Ask me a question, or say a sentence and I'll help."
+        spoken = "Hi. I’m your English coach. Ask me anything, or send a sentence from your day."
         return display, spoken
+    if _LEARN_ENGLISH.search(learner):
+        return _learn_english_reply()
     if looks_like_question(learner) and not asked:
         corrected, notes = apply_english_fixes(learner)
         return _local_question_reply(learner, corrected, notes)
@@ -315,6 +366,12 @@ def _gemini_is_weak(reply: str, learner: str, *, asked: bool, question: bool) ->
         return True
     if question and re.search(r"what happen(?:ed)? next", lowered):
         return True
+    if question and (
+        "tell me a little more about what you want to know" in lowered
+        or "tell me a bit more and i'll explain" in lowered
+        or "tell me a bit more and i’ll explain" in lowered
+    ):
+        return True
     original = re.sub(r"\s+", " ", (learner or "").strip()).lower().rstrip(".")
     if asked and original and original in lowered and "went to the market" not in lowered:
         if "correct" in original or "got to market" in original:
@@ -333,6 +390,8 @@ async def generate_coach_reply(
     if not (external_allowed and settings.gemini_configured):
         return fallback, spoken, False, "local"
     learner, asked = extract_learner_text(message)
+    if _LEARN_ENGLISH.search(learner):
+        asked = False
     instruction = ENGLISH_INSTRUCTION if mode == ENGLISH_MODE else PAVI_INSTRUCTION
     prior = _history_block(history or [])
     prompt = f"{instruction}\n\n"
@@ -343,10 +402,13 @@ async def generate_coach_reply(
         prompt += f"Learner message: {message}\n"
         if question:
             prompt += (
-                "They asked a question. Answer it in simple English first. "
-                "You may also polish how they asked it. "
-                "Do not reply with a sentence drill. Never say what happened next.\n"
+                "They asked a real question. Answer it like a human tutor: useful first, then one next step. "
+                "If they asked how to learn English, give a short daily plan and invite one practice sentence. "
+                "Do not stall. Do not say tell me more. Do not use a sentence-correction template. "
+                "Never say what happened next.\n"
             )
+            if _LEARN_ENGLISH.search(learner):
+                prompt += f"A good local plan you may follow or improve:\n{fallback[:1200]}\n"
         else:
             prompt += (
                 f"Sentence to teach (ignore ‘correct my english’ wording): {learner}\n"

@@ -8,7 +8,7 @@ export default function EnglishPage() {
       mode="english"
       title="English"
       initials="EN"
-      hint="Learn English and get corrections"
+      hint="Talk like a teacher — ask anything or send a sentence"
     />
   );
 }
