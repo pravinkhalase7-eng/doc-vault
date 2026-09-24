@@ -101,6 +101,23 @@ def test_english_fixes_went_tomorrow_and_spelling():
     assert "i'm going" not in past.lower()
 
 
+def test_english_teaches_marathi_hunger():
+    for msg in (
+        "mala bhook lagali",
+        "mala bhuk lagli",
+        "mujhe bhookh lagi",
+        "मला भूक लागली",
+    ):
+        reply, spoken = local_english_reply(msg)
+        lowered = reply.lower()
+        assert "that sounds natural" not in lowered, msg
+        assert "feeling hungry" in lowered, msg
+        assert "hungry" in spoken.lower(), msg
+    reply, _ = local_english_reply("mala bhook lagali")
+    assert "i am feeling hungry" in reply.lower()
+    assert "i'm hungry" in reply.lower()
+
+
 def test_pcm_wraps_as_wav():
     framed = pcm16_to_wav(b"\x00\x00" * 80)
     assert framed[:4] == b"RIFF"

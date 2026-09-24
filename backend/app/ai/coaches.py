@@ -25,6 +25,8 @@ If they ask a question: answer it. Give examples. Then offer one practice line. 
 
 If they send a sentence to correct: show a fully natural version. Fix meaning, tense, spelling, and articles — never teach a sentence that is still wrong. Example: “I went … tomorrow” must become “I’m going … tomorrow” (or “I will go”). Then 1–3 short reasons and one line to say out loud.
 
+If they write Marathi, Hindi, or Hinglish (Roman letters or Devanagari): do not treat it as broken English. Translate the meaning, then teach natural spoken English. Example: “mala bhook lagali” → “I am feeling hungry.” / “I'm hungry.” Never say that the Marathi/Hindi line “sounds natural” as English.
+
 If they are chatting: reply as a conversation partner, then lightly fix slips.
 
 Never use canned closers: “what happened next”, “tell me one more sentence about this”, “your turn”, “tell me a little more about what you want to know”.
@@ -40,6 +42,7 @@ PAVI_INSTRUCTION = """You are Pavi, a warm personal AI assistant chatting like a
 Rules:
 - Answer the actual request. Be concise, practical, and kind.
 - Do not stall with “tell me more” until you have given a useful first answer or a draft they can use.
+- If they write Marathi, Hindi, or Hinglish, understand it and reply helpfully in simple English.
 - If they want English practice or grammar correction, help briefly, then mention they can open English for daily speaking practice.
 - If they ask about files, passports, PDFs, or their vault, tell them to use Ask My Vault. Do not invent document facts.
 - Do not claim to have seen their documents.
@@ -266,6 +269,236 @@ def _learn_english_reply() -> tuple[str, str]:
     return display, spoken
 
 
+_DEVANAGARI = re.compile(r"[\u0900-\u097F]")
+_INDIC_STRONG = frozenset(
+    {
+        "mala",
+        "maala",
+        "majha",
+        "majhi",
+        "majhe",
+        "tumhi",
+        "tumhala",
+        "aahe",
+        "aahes",
+        "aahat",
+        "kasa",
+        "kashi",
+        "kase",
+        "kay",
+        "udya",
+        "ghari",
+        "gelo",
+        "geli",
+        "gele",
+        "jatoy",
+        "lagali",
+        "lagli",
+        "bhook",
+        "bhookh",
+        "bhuk",
+        "thakla",
+        "thakli",
+        "tahaan",
+        "mujhe",
+        "muje",
+        "kaise",
+        "kya",
+        "pyaas",
+        "pyas",
+        "hoon",
+        "shikaycha",
+        "dhanyavad",
+        "shukriya",
+    }
+)
+_INDIC_WORDS = _INDIC_STRONG | {
+    "mi",
+    "tu",
+    "nahi",
+    "aaj",
+    "kal",
+    "hai",
+    "hain",
+    "raha",
+    "rahi",
+    "gaya",
+    "gayi",
+    "theek",
+    "thik",
+    "naav",
+    "naam",
+}
+
+
+def looks_like_indic(text: str) -> bool:
+    raw = text or ""
+    if _DEVANAGARI.search(raw):
+        return True
+    words = set(re.findall(r"[a-zA-Z]+", raw.lower()))
+    if words & _INDIC_STRONG:
+        return True
+    return len(words & _INDIC_WORDS) >= 2
+
+
+def _indic_label(text: str) -> str:
+    words = set(re.findall(r"[a-zA-Z]+", (text or "").lower()))
+    marathi = words & {"mala", "maala", "majha", "tumhi", "aahe", "aahes", "aahat", "kasa", "kashi", "udya", "ghari", "gelo", "lagali"}
+    hindi = words & {"mujhe", "muje", "kaise", "kya", "hoon", "hain", "pyaas"}
+    if marathi and not hindi:
+        return "Marathi"
+    if hindi and not marathi:
+        return "Hindi"
+    return "Marathi or Hindi"
+
+
+def _other_language_lesson(english: str, *, also: str | None, language: str, why: str) -> tuple[str, str]:
+    extra = f"\n\nShort everyday form:\n{also}" if also else ""
+    display = (
+        f"That looks like {language}.\n\n"
+        f"In English, say:\n{english}{extra}\n\n"
+        f"Why:\n- {why}\n\n"
+        f"Say this out loud:\n{english.rstrip('.')}."
+    )
+    spoken = (
+        f"In English, say: {english.rstrip('.')}. "
+        + (f"People also say: {also.rstrip('.')}." if also else "Say it with me.")
+    )
+    return display, spoken
+
+
+_INDIC_PHRASES: list[tuple[re.Pattern[str], str, str | None, str]] = [
+    (
+        re.compile(
+            r"(?:mala|maala|mla)\s+bh+[ou]+k+h?\s+lag(?:ali|li|le|la|lay)|"
+            r"(?:mujhe|muje|muze)\s+bh+[ou]+k+h?\s+lag[iey]+(?:\s+hai)?|"
+            r"मला\s*भूक\s*लागली|मुझे\s*भूख\s*लगी",
+            re.I,
+        ),
+        "I am feeling hungry.",
+        "I'm hungry.",
+        "“Bhook lagali / bhookh lagi” means hunger has come to you. English uses I + am feeling + hungry.",
+    ),
+    (
+        re.compile(
+            r"(?:mala|maala)\s+(?:tahaan|thahan)\s+lag(?:ali|li|le)|"
+            r"(?:mujhe|muje)\s+pyaa?s\s+lag[iey]+|"
+            r"मला\s*तहान|मुझे\s*प्यास",
+            re.I,
+        ),
+        "I am feeling thirsty.",
+        "I'm thirsty.",
+        "This means you need water. English: I am thirsty.",
+    ),
+    (
+        re.compile(
+            r"(?:mala|mi)\s+thak(?:la|li|lo|le)|(?:main|mai)\s+thak\s+ga(?:ya|yi|ye)|"
+            r"मी\s*थक|मैं\s*थक",
+            re.I,
+        ),
+        "I am tired.",
+        "I'm tired.",
+        "“Thakla / thak gaya” means tired. English: I am tired.",
+    ),
+    (
+        re.compile(r"\b(?:kasa aahes|kashi aahes|kase aahat|kaise ho|kaise hain|kaise ho aap)\b|कसा आहेस|कशी आहेस|कैसे हो", re.I),
+        "How are you?",
+        None,
+        "This is the usual greeting. Answer with: I'm good, thank you.",
+    ),
+    (
+        re.compile(r"(?:mi|main|mai)\s+(?:theek|thik)\s+(?:aahe|hoon|hu)|मी\s*ठीक|मैं\s*ठीक", re.I),
+        "I am fine.",
+        "I'm fine.",
+        "A natural reply to “How are you?” is: I'm fine, thank you.",
+    ),
+    (
+        re.compile(
+            r"(?:mi|me)\s+office\s+la\s+(?:jatoy|jato|jail|jaatoy)|"
+            r"(?:main|mai)\s+office\s+ja\s+rah[ai]\s+(?:hoon|hu)",
+            re.I,
+        ),
+        "I am going to the office.",
+        "I'm going to the office.",
+        "Use “going” for now or soon, and “the office”.",
+    ),
+    (
+        re.compile(
+            r"(?:mi|me)\s+office\s+la\s+ge(?:lo|li|le)|(?:main|mai)\s+office\s+ga(?:ya|yi)",
+            re.I,
+        ),
+        "I went to the office.",
+        None,
+        "Past trip: I went to the office.",
+    ),
+    (
+        re.compile(r"(?:mi|me)\s+(?:ghari|gharala)\s+(?:jatoy|jato|chalto)|(?:main|mai)\s+ghar\s+ja\s+rah[ai]", re.I),
+        "I am going home.",
+        "I'm going home.",
+        "We say “home” without “the”: I'm going home.",
+    ),
+    (
+        re.compile(r"\b(?:dhanyava[ad]+|shukriya|sukriya)\b|धन्यवाद|शुक्रिया", re.I),
+        "Thank you.",
+        "Thanks.",
+        "“Dhanyavad / shukriya” is Thank you.",
+    ),
+]
+
+
+def _indic_keyword_lesson(text: str) -> tuple[str, str] | None:
+    low = (text or "").lower()
+    language = _indic_label(text)
+    if re.search(r"bh+[ou]+k+h?|भूक|भूख", low):
+        return _other_language_lesson(
+            "I am feeling hungry.",
+            also="I'm hungry.",
+            language=language,
+            why="You used a hunger word. In English we say I am feeling hungry, or just I'm hungry.",
+        )
+    if re.search(r"tahaan|thahan|pyaa?s|तहान|प्यास", low):
+        return _other_language_lesson(
+            "I am feeling thirsty.",
+            also="I'm thirsty.",
+            language=language,
+            why="This is about thirst. English: I am thirsty.",
+        )
+    if re.search(r"\bthak|\btired|थक", low):
+        return _other_language_lesson(
+            "I am tired.",
+            also="I'm tired.",
+            language=language,
+            why="English: I am tired.",
+        )
+    return None
+
+
+def other_language_english_reply(message: str) -> tuple[str, str] | None:
+    raw = (message or "").strip()
+    if not raw or not looks_like_indic(raw):
+        return None
+    compact = re.sub(r"\s+", " ", raw)
+    for pattern, english, also, why in _INDIC_PHRASES:
+        if pattern.search(compact):
+            return _other_language_lesson(english, also=also, language=_indic_label(raw), why=why)
+    keyword = _indic_keyword_lesson(raw)
+    if keyword:
+        return keyword
+    language = _indic_label(raw)
+    display = (
+        f"That looks like {language}, not English.\n\n"
+        "I’ll teach the English for what you mean. For example:\n"
+        "mala bhook lagali → I am feeling hungry.\n\n"
+        "Say the same idea again, or mix in one English word (hungry, tired, office), "
+        "and I’ll give you a full sentence to say out loud."
+    )
+    spoken = (
+        "That looks like Marathi or Hindi. "
+        "Tell me the idea — hungry, tired, or going to the office — and I’ll give you the English."
+    )
+    return display, spoken
+
+
 def spoken_english(corrected: str, notes: list[str]) -> str:
     line = (corrected or "").rstrip(".")
     why = notes[0] if notes else "Listen once, then say it with me."
@@ -349,13 +582,16 @@ def local_english_reply(message: str) -> tuple[str, str]:
     if not learner or lowered in {"hi", "hello", "hey", "good morning", "good evening", "help"}:
         display = (
             "Hi — I’m your English coach. Talk to me the way you would talk to a teacher.\n\n"
-            "Ask anything, send a sentence from your day, or say “let’s practise a job interview”. "
-            "I’ll answer, correct slips, and give you a line to say out loud."
+            "Ask anything, send a sentence from your day, or type Marathi or Hindi — I’ll give you the English to say. "
+            "You can also say “let’s practise a job interview”."
         )
-        spoken = "Hi. I’m your English coach. Ask me anything, or send a sentence from your day."
+        spoken = "Hi. I’m your English coach. Ask me anything, send a sentence, or type Marathi or Hindi."
         return display, spoken
     if _LEARN_ENGLISH.search(learner):
         return _learn_english_reply()
+    other = other_language_english_reply(learner)
+    if other:
+        return other
     if looks_like_question(learner) and not asked:
         corrected, notes = apply_english_fixes(learner)
         return _local_question_reply(learner, corrected, notes)
@@ -396,7 +632,7 @@ def local_pavi_reply(message: str) -> tuple[str, str]:
             "For files in your vault, use Ask My Vault. For speaking practice, open English."
         )
         return display, "Hi, I'm Pavi. Tell me what you need help with."
-    if any(word in lowered for word in ("correct", "grammar", "english", "sentence")):
+    if looks_like_indic(text) or any(word in lowered for word in ("correct", "grammar", "english", "sentence")):
         display, spoken = local_english_reply(text)
         return display + "\n\nFor daily speaking practice, open English.", spoken
     if "plan" in lowered or "todo" in lowered or "to-do" in lowered or "schedule" in lowered:
@@ -463,6 +699,8 @@ def _gemini_is_weak(reply: str, learner: str, *, asked: bool, question: bool) ->
         return True
     if _sentence_still_wrong(reply):
         return True
+    if looks_like_indic(learner) and "that sounds natural" in lowered:
+        return True
     original = re.sub(r"\s+", " ", (learner or "").strip()).lower().rstrip(".")
     if asked and original and original in lowered and "went to the market" not in lowered:
         if "correct" in original or "got to market" in original:
@@ -491,7 +729,15 @@ async def generate_coach_reply(
     question = looks_like_question(learner) and not asked
     if mode == ENGLISH_MODE:
         prompt += f"Learner message: {message}\n"
-        if question:
+        if looks_like_indic(learner):
+            prompt += (
+                "They wrote Marathi, Hindi, or Hinglish (Roman or Devanagari). "
+                "Translate the meaning into natural spoken English and teach that. "
+                "Do not treat it as broken English. Do not add “the” and call it done. "
+                "Do not say it sounds natural. Give 1–2 English sentences to say out loud.\n"
+                f"Local first pass:\n{fallback[:1200]}\n"
+            )
+        elif question:
             prompt += (
                 "They asked a real question. Answer it like a human tutor: useful first, then one next step. "
                 "If they asked how to learn English, give a short daily plan and invite one practice sentence. "
