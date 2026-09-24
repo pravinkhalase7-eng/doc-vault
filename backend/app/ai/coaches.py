@@ -23,7 +23,7 @@ If they ask how to learn / improve / speak English: give a short real plan (dail
 
 If they ask a question: answer it. Give examples. Then offer one practice line. Do not reply with only “Good question” or “tell me a little more”.
 
-If they send a sentence to correct: show a natural version, 1–3 short reasons, and one line to say out loud.
+If they send a sentence to correct: show a fully natural version. Fix meaning, tense, spelling, and articles — never teach a sentence that is still wrong. Example: “I went … tomorrow” must become “I’m going … tomorrow” (or “I will go”). Then 1–3 short reasons and one line to say out loud.
 
 If they are chatting: reply as a conversation partner, then lightly fix slips.
 
@@ -45,7 +45,59 @@ Rules:
 - Do not claim to have seen their documents.
 """
 
+_SPELLINGS: list[tuple[str, str, str]] = [
+    ("tomorow", "tomorrow", "Spelling: tomorrow (one m, two r’s)."),
+    ("tommorow", "tomorrow", "Spelling: tomorrow (one m, two r’s)."),
+    ("tommorrow", "tomorrow", "Spelling: tomorrow (one m, two r’s)."),
+    ("tomarrow", "tomorrow", "Spelling: tomorrow (one m, two r’s)."),
+    ("yestarday", "yesterday", "Spelling: yesterday."),
+    ("yesterdy", "yesterday", "Spelling: yesterday."),
+    ("todya", "today", "Spelling: today."),
+    ("becaus", "because", "Spelling: because."),
+    ("becouse", "because", "Spelling: because."),
+    ("becuase", "because", "Spelling: because."),
+    ("recieve", "receive", "Spelling: receive (i before e)."),
+    ("seperate", "separate", "Spelling: separate."),
+    ("definately", "definitely", "Spelling: definitely."),
+    ("occured", "occurred", "Spelling: occurred (two r’s)."),
+    ("enviroment", "environment", "Spelling: environment."),
+    ("goverment", "government", "Spelling: government."),
+    ("adress", "address", "Spelling: address (two d’s)."),
+    ("buisness", "business", "Spelling: business."),
+    ("sucess", "success", "Spelling: success (two c’s, two s’s)."),
+    ("freind", "friend", "Spelling: friend."),
+    ("thier", "their", "Spelling: their."),
+    ("truely", "truly", "Spelling: truly (no e)."),
+    ("begining", "beginning", "Spelling: beginning (two n’s)."),
+    ("untill", "until", "Spelling: until (one l)."),
+    ("teh", "the", "Spelling: the."),
+    ("taht", "that", "Spelling: that."),
+]
+
+_FUTURE_TIME = re.compile(
+    r"\b(?:tomorrow|tmrw|tmw|next\s+(?:week|month|year|monday|tuesday|wednesday|"
+    r"thursday|friday|saturday|sunday))\b",
+    re.I,
+)
+_PAST_TIME = re.compile(
+    r"\b(?:yesterday|last\s+(?:week|month|year|night|monday|tuesday|wednesday|"
+    r"thursday|friday|saturday|sunday)|(?:a\s+|\d+\s+)days?\s+ago)\b",
+    re.I,
+)
+_WENT_TO_GOING = [
+    (re.compile(r"\bI went\b", re.I), "I'm going"),
+    (re.compile(r"\bWe went\b", re.I), "We're going"),
+    (re.compile(r"\bThey went\b", re.I), "They're going"),
+    (re.compile(r"\bHe went\b", re.I), "He's going"),
+    (re.compile(r"\bShe went\b", re.I), "She's going"),
+    (re.compile(r"\bYou went\b", re.I), "You're going"),
+]
+
 _FIXES: list[tuple[re.Pattern[str], str, str]] = [
+    (re.compile(r"\bwill went\b", re.I), "will go", "After “will”, use go, not went."),
+    (re.compile(r"\b(?:I am|I'm) go\b", re.I), "I'm going", "Say “I'm going”, not “I am go”."),
+    (re.compile(r"\bI going\b", re.I), "I'm going", "Say “I'm going”, not “I going”."),
+    (re.compile(r"\bdidn't went\b", re.I), "didn't go", "After didn’t, use go, not went."),
     (re.compile(r"\bi am agree\b", re.I), "I agree", "Say “I agree”, not “I am agree”."),
     (re.compile(r"\bdiscuss about\b", re.I), "discuss", "Use “discuss”, not “discuss about”."),
     (re.compile(r"\brevert back\b", re.I), "reply", "“Revert back” is office slang. Prefer “reply” or “get back to you”."),
@@ -128,18 +180,45 @@ def _polish(text: str) -> str:
 def apply_english_fixes(text: str) -> tuple[str, list[str]]:
     corrected = (text or "").strip()
     notes: list[str] = []
-    for pattern, repl, note in _FIXES:
+
+    def add_note(note: str) -> None:
+        if note and note not in notes:
+            notes.append(note)
+
+    for wrong, right, note in _SPELLINGS:
+        pattern = re.compile(rf"\b{re.escape(wrong)}\b", re.I)
         if pattern.search(corrected):
-            corrected = pattern.sub(repl, corrected)
-            if note not in notes:
-                notes.append(note)
+            corrected = pattern.sub(right, corrected)
+            add_note(note)
+
+    for _ in range(2):
+        for pattern, repl, note in _FIXES:
+            if pattern.search(corrected):
+                corrected = pattern.sub(repl, corrected)
+                add_note(note)
+
+    if _FUTURE_TIME.search(corrected) and re.search(r"\bwent\b", corrected, re.I):
+        for pattern, repl in _WENT_TO_GOING:
+            if pattern.search(corrected):
+                corrected = pattern.sub(repl, corrected)
+        tense_note = (
+            "Tomorrow is the future, so don’t use “went” (that’s past). Say “I'm going” or “I will go”."
+        )
+        if tense_note not in notes:
+            notes.insert(0, tense_note)
+
+    if _PAST_TIME.search(corrected):
+        if re.search(r"\b(?:I'm|I am) going\b", corrected, re.I) and not _FUTURE_TIME.search(corrected):
+            corrected = re.sub(r"\b(?:I'm|I am) going\b", "I went", corrected, flags=re.I)
+            add_note("Yesterday is the past, so use “went”, not “I'm going”.")
+
     polished = _polish(corrected)
     original_polished = _polish(text or "")
-    if polished != original_polished and "Start with a capital letter. The word “I” is always capital." not in notes:
+    if polished != original_polished and len(notes) < 3:
         raw = (text or "").lstrip()
         if polished and raw and polished[0] != raw[:1]:
-            notes.append("Start with a capital letter. The word “I” is always capital.")
-    return polished, notes
+            add_note("Start with a capital letter. The word “I” is always capital.")
+    return polished, notes[:3]
 
 
 _QUESTION_START = re.compile(
@@ -293,7 +372,7 @@ def local_english_reply(message: str) -> tuple[str, str]:
     if notes or asked:
         bullets = "\n".join(f"- {note}" for note in notes) or "- I'll keep this natural and easy to say."
         display = (
-            f"Here's a better sentence:\n{corrected}\n\n"
+            f"Almost — here's natural English:\n{corrected}\n\n"
             f"Why:\n{bullets}\n\n"
             f"Say this out loud:\n{corrected.rstrip('.')}."
         )
@@ -360,6 +439,16 @@ def _split_spoken(reply: str, fallback: str) -> tuple[str, str]:
     return display or reply.strip(), spoken or fallback
 
 
+def _sentence_still_wrong(text: str) -> bool:
+    lowered = (text or "").lower()
+    if re.search(r"\b(?:tomorow|tommorow|tommorrow|tomarrow)\b", lowered):
+        return True
+    if _FUTURE_TIME.search(lowered) and re.search(r"\bwent\b", lowered):
+        if not re.search(r"\b(?:i'm going|i am going|i will go|we're going|we will go)\b", lowered):
+            return True
+    return False
+
+
 def _gemini_is_weak(reply: str, learner: str, *, asked: bool, question: bool) -> bool:
     lowered = (reply or "").lower()
     if "that looks clear" in lowered:
@@ -371,6 +460,8 @@ def _gemini_is_weak(reply: str, learner: str, *, asked: bool, question: bool) ->
         or "tell me a bit more and i'll explain" in lowered
         or "tell me a bit more and i’ll explain" in lowered
     ):
+        return True
+    if _sentence_still_wrong(reply):
         return True
     original = re.sub(r"\s+", " ", (learner or "").strip()).lower().rstrip(".")
     if asked and original and original in lowered and "went to the market" not in lowered:
@@ -412,8 +503,10 @@ async def generate_coach_reply(
         else:
             prompt += (
                 f"Sentence to teach (ignore ‘correct my english’ wording): {learner}\n"
-                f"A solid local correction:\n{fallback[:1200]}\n"
-                "Teach from that. Do not echo the uncorrected sentence as if it is already natural. "
+                f"Local first pass (it may be incomplete — you must still fix remaining spelling, tense, and meaning):\n"
+                f"{fallback[:1200]}\n"
+                "Never copy a half-fixed sentence. Never teach “went” with “tomorrow”. "
+                "Do not echo the uncorrected sentence as if it is already natural. "
                 "Do not add “what happened next” unless they were telling a story.\n"
             )
         if asked:

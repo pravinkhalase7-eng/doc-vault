@@ -34,7 +34,7 @@ def test_english_greeting_does_not_search_vault():
 def test_english_correction_reply_has_sections():
     reply, spoken = local_english_reply("pls revert back after you discuss about it")
     lowered = reply.lower()
-    assert "better sentence" in lowered or "corrected" in lowered
+    assert "better sentence" in lowered or "corrected" in lowered or "natural english" in lowered
     assert "discuss" in lowered
     assert "please" in lowered
     assert "say it with me" in spoken.lower() or "went to the market" in spoken.lower()
@@ -80,6 +80,25 @@ def test_english_how_to_learn_gets_a_real_plan():
     assert "10 minutes" in want.lower()
     improve, _ = local_english_reply("how can I improve my english?")
     assert "10 minutes" in improve.lower()
+
+
+def test_english_fixes_went_tomorrow_and_spelling():
+    corrected, notes = apply_english_fixes("i went to office tomorow")
+    lowered = corrected.lower()
+    assert "tomorrow" in lowered
+    assert "tomorow" not in lowered
+    assert "the office" in lowered
+    assert "went" not in lowered
+    assert "i'm going" in lowered or "i will go" in lowered
+    assert any("future" in n.lower() or "went" in n.lower() for n in notes)
+    reply, spoken = local_english_reply("i went to office tomorow")
+    text = reply.lower()
+    assert "i went to the office tomorow" not in text
+    assert "i'm going to the office tomorrow" in text
+    assert "tomorrow" in spoken.lower()
+    past, past_notes = apply_english_fixes("i went to office yesterday")
+    assert "i went to the office yesterday" in past.lower()
+    assert "i'm going" not in past.lower()
 
 
 def test_pcm_wraps_as_wav():
