@@ -58,6 +58,16 @@ def test_pavi_intro_and_vault_handoff():
     assert "pavi" in spoken.lower()
 
 
+def test_english_question_does_not_ask_what_happened_next():
+    reply, spoken = local_english_reply("how are you")
+    assert "happened next" not in reply.lower()
+    assert "happened next" not in spoken.lower()
+    assert "doing well" in reply.lower()
+    follow, follow_spoken = local_english_reply("I went to the market")
+    assert "happened next" not in follow.lower()
+    assert "happened next" not in follow_spoken.lower()
+
+
 def test_pcm_wraps_as_wav():
     framed = pcm16_to_wav(b"\x00\x00" * 80)
     assert framed[:4] == b"RIFF"

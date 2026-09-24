@@ -16,20 +16,18 @@ COACH_TITLES = {ENGLISH_MODE: "English", PAVI_MODE: "Pavi"}
 COACH_TITLE_SET = frozenset(COACH_TITLES.values())
 
 ENGLISH_INSTRUCTION = """You are a patient English tutor for adult learners (often Indian English speakers).
-Your job is to TEACH, not to praise a broken sentence as already correct.
 
-Always:
-1) Show a natural corrected sentence (never repeat their uncorrected line as the “natural version”).
-2) Explain the 1–3 mistakes in plain words (articles like “the”, tense, prepositions).
-3) Give one short line they should say out loud.
-4) Ask them to try one new sentence.
+First decide what they need:
+- QUESTION (what / why / how / when / where / who, or a ?): answer the question in simple English. Then, only if their wording was off, show a better way to ask it. Do not ignore the question.
+- SENTENCE TO CORRECT: show a natural corrected sentence, 1–3 short reasons, and one line to say out loud.
+- CHAT / PRACTICE: reply as a conversation partner, then lightly correct slips.
 
-If they wrote something like “correct my english”, ignore that request wording and correct the actual sentence.
-Never say “That looks clear” unless the sentence is already natural AND they did not ask for a correction.
+Never use a canned closer like “what happened next”, “tell me one more sentence about this”, or “your turn” after every message.
+Only ask what happened next if they were clearly telling a story.
 Do not mention DocVault, documents, or files unless they ask.
 
 End with a single line in this exact form:
-SPEAK: <one or two spoken sentences, including the corrected line to repeat>
+SPEAK: <one or two spoken sentences. If they asked a question, speak the answer. If they gave a sentence to practice, speak the corrected line.>
 """
 
 PAVI_INSTRUCTION = """You are Pavi, a warm personal AI assistant.
@@ -139,6 +137,22 @@ def apply_english_fixes(text: str) -> tuple[str, list[str]]:
     return polished, notes
 
 
+_QUESTION_START = re.compile(
+    r"^(what|what's|whats|why|how|when|where|who|which|can|could|should|do|does|did|"
+    r"is|are|am|will|would|may|have|has|had|tell me|explain|please tell)\b",
+    re.I,
+)
+
+
+def looks_like_question(text: str) -> bool:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return False
+    if "?" in cleaned:
+        return True
+    return bool(_QUESTION_START.match(cleaned))
+
+
 def spoken_english(corrected: str, notes: list[str]) -> str:
     line = (corrected or "").rstrip(".")
     why = notes[0] if notes else "Listen once, then say it with me."
@@ -149,6 +163,57 @@ def spoken_english(corrected: str, notes: list[str]) -> str:
     )
 
 
+def _local_question_reply(learner: str, corrected: str, notes: list[str]) -> tuple[str, str]:
+    lowered = learner.lower().strip().rstrip("?.! ")
+    if lowered in {"how are you", "how r you", "how are u"}:
+        display = (
+            "I'm doing well, thank you.\n\n"
+            "You can answer the same way:\n"
+            "I'm good, thank you. How are you?"
+        )
+        spoken = "I'm doing well, thank you. You can say: I'm good, thank you. How are you?"
+        return display, spoken
+    if lowered in {"what is your name", "what's your name", "whats your name", "who are you"}:
+        display = (
+            "I'm your English coach. You can call me English.\n\n"
+            "A natural question is:\nWhat's your name?\n\n"
+            "You can answer: My name is …"
+        )
+        spoken = "I'm your English coach. A natural question is: What's your name?"
+        return display, spoken
+    if "difference between a and the" in lowered or re.search(r"\ba\s+and\s+the\b", lowered):
+        display = (
+            "Use “a” the first time you mention something, and “the” when we both know which one.\n\n"
+            "I saw a dog. The dog was brown.\n"
+            "I went to the market. (a specific, usual place)"
+        )
+        spoken = "Use a the first time. Use the when we both know which one. I went to the market."
+        return display, spoken
+    if re.search(r"\b(how do i say|how to say|what is the meaning|what does .* mean)\b", lowered):
+        display = (
+            f"Ask it like this:\n{corrected}\n\n"
+            "Tell me the word or sentence you want, and I'll give you a simple English version to say out loud."
+        )
+        spoken = "Tell me the word or sentence you want, and I'll give you a simple way to say it."
+        return display, spoken
+    polish = ""
+    if notes:
+        bullets = "\n".join(f"- {note}" for note in notes)
+        polish = f"\n\nA natural way to ask this:\n{corrected}\n\nWhy:\n{bullets}"
+    display = (
+        f"Good question.{polish}\n\n"
+        "Here's a short answer in simple English: tell me a little more about what you want to know — "
+        "a word, a sentence, or a situation — and I'll explain it clearly."
+    )
+    spoken = (
+        f"Good question. A natural way to ask is: {corrected.rstrip('.')}. "
+        "Tell me a bit more and I'll explain it in simple English."
+        if notes
+        else "Good question. Tell me a bit more and I'll explain it in simple English."
+    )
+    return display, spoken
+
+
 def local_english_reply(message: str) -> tuple[str, str]:
     raw = (message or "").strip()
     learner, asked = extract_learner_text(raw)
@@ -156,11 +221,14 @@ def local_english_reply(message: str) -> tuple[str, str]:
     if not learner or lowered in {"hi", "hello", "hey", "good morning", "good evening", "help"}:
         display = (
             "Hi — I'm your English coach.\n\n"
-            "Type or speak a sentence and I'll correct it. You can also say "
-            "“let's practice a job interview” or paste a message you want to sound more natural."
+            "Ask me a question, or type a sentence and I'll help you say it naturally. "
+            "You can also say “let's practice a job interview”."
         )
-        spoken = "Hi. I'm your English coach. Say a sentence, and I'll help you say it naturally."
+        spoken = "Hi. I'm your English coach. Ask me a question, or say a sentence and I'll help."
         return display, spoken
+    if looks_like_question(learner) and not asked:
+        corrected, notes = apply_english_fixes(learner)
+        return _local_question_reply(learner, corrected, notes)
     if any(word in lowered for word in ("interview", "practice", "conversation", "topic")) and not asked:
         display = (
             "Sure — let's practice.\n\n"
@@ -176,16 +244,15 @@ def local_english_reply(message: str) -> tuple[str, str]:
         display = (
             f"Here's a better sentence:\n{corrected}\n\n"
             f"Why:\n{bullets}\n\n"
-            f"Say this out loud:\n{corrected.rstrip('.')}.\n\n"
-            "Your turn: tell me one more sentence about this."
+            f"Say this out loud:\n{corrected.rstrip('.')}."
         )
         return display, spoken_english(corrected, notes)
     display = (
-        f"That's already close.\n\n"
-        f"Natural version:\n{corrected}\n\n"
-        "Say it out loud once, then try a longer sentence — what happened next?"
+        f"That sounds natural.\n\n"
+        f"{corrected}\n\n"
+        "Ask me anything, or give me another sentence to check."
     )
-    spoken = f"Good. Natural English: {corrected.rstrip('.')}. Now tell me what happened next."
+    spoken = f"That sounds natural: {corrected.rstrip('.')}. Ask me anything, or give me another sentence."
     return display, spoken
 
 
@@ -242,12 +309,14 @@ def _split_spoken(reply: str, fallback: str) -> tuple[str, str]:
     return display or reply.strip(), spoken or fallback
 
 
-def _gemini_is_weak(reply: str, learner: str) -> bool:
+def _gemini_is_weak(reply: str, learner: str, *, asked: bool, question: bool) -> bool:
     lowered = (reply or "").lower()
     if "that looks clear" in lowered:
         return True
+    if question and re.search(r"what happen(?:ed)? next", lowered):
+        return True
     original = re.sub(r"\s+", " ", (learner or "").strip()).lower().rstrip(".")
-    if original and original in lowered and "went to the market" not in lowered:
+    if asked and original and original in lowered and "went to the market" not in lowered:
         if "correct" in original or "got to market" in original:
             return True
     return False
@@ -269,13 +338,22 @@ async def generate_coach_reply(
     prompt = f"{instruction}\n\n"
     if prior:
         prompt += f"Recent chat:\n{prior}\n\n"
+    question = looks_like_question(learner) and not asked
     if mode == ENGLISH_MODE:
-        prompt += (
-            f"Learner message: {message}\n"
-            f"Sentence to teach (ignore ‘correct my english’ wording): {learner}\n"
-            f"A solid local correction: {fallback[:1200]}\n"
-            "Teach from that. Do not echo the uncorrected sentence as if it is already natural.\n"
-        )
+        prompt += f"Learner message: {message}\n"
+        if question:
+            prompt += (
+                "They asked a question. Answer it in simple English first. "
+                "You may also polish how they asked it. "
+                "Do not reply with a sentence drill. Never say what happened next.\n"
+            )
+        else:
+            prompt += (
+                f"Sentence to teach (ignore ‘correct my english’ wording): {learner}\n"
+                f"A solid local correction:\n{fallback[:1200]}\n"
+                "Teach from that. Do not echo the uncorrected sentence as if it is already natural. "
+                "Do not add “what happened next” unless they were telling a story.\n"
+            )
         if asked:
             prompt += "They asked for a correction — you must teach, not praise the original line.\n"
     else:
@@ -284,7 +362,9 @@ async def generate_coach_reply(
         reply = (await GeminiProvider().generate(prompt)).strip()
         if reply:
             display, cloud_spoken = _split_spoken(reply, spoken)
-            if mode == ENGLISH_MODE and _gemini_is_weak(display, learner):
+            if mode == ENGLISH_MODE and _gemini_is_weak(
+                display, learner, asked=asked, question=question
+            ):
                 return fallback, spoken, False, "local"
             return display, cloud_spoken, True, settings.gemini_model
     except Exception:
