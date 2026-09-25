@@ -187,27 +187,18 @@ Or leave a copy at /var/jenkins_home/doc-vault.env on the Jenkins host.''')
       }
       steps {
         script {
-          sh '''
-            set +e
-            echo "=== Stop previous DocVault containers ==="
-            docker compose -f docker-compose.yml down --remove-orphans || true
-            docker rm -f docvault-api docvault-web docvault-postgres docvault-redis docvault-celery-worker docvault-celery-beat docvault-nginx 2>/dev/null || true
-            docker rmi -f docvault-api:latest docvault-web:latest docvault-nginx:latest 2>/dev/null || true
-            echo "=== Remaining docvault images ==="
-            docker images | grep docvault || echo none
-            echo "=== Docker volumes ==="
-            docker volume ls
-          '''
+          echo "Leaving the live DocVault stack up during this build so docvault.doxstation.com does not 502."
+          echo "New images are built first; Deploy recreates app containers after they exist."
           if (params.RESET_POSTGRES) {
             sh '''
               set +e
-              echo "RESET_POSTGRES=true — deleting Postgres volume (this wipes users and documents)"
+              echo "RESET_POSTGRES=true — stopping stack and deleting Postgres volume (this wipes users and documents)"
+              docker compose -f docker-compose.yml down --remove-orphans || true
+              docker rm -f docvault-api docvault-web docvault-postgres docvault-redis docvault-celery-worker docvault-celery-beat docvault-nginx 2>/dev/null || true
               docker volume rm -f docvault_postgres_data postgres_data 2>/dev/null || true
               echo "=== Docker volumes after Postgres reset ==="
               docker volume ls
             '''
-          } else {
-            echo "Keeping Postgres volume docvault_postgres_data so users and documents survive this deploy"
           }
         }
       }
@@ -290,13 +281,11 @@ Or leave a copy at /var/jenkins_home/doc-vault.env on the Jenkins host.''')
           docker compose -f docker-compose.yml config | grep DATABASE_URL || true
           docker compose -f docker-compose.yml config | grep POSTGRES_PASSWORD || true
 
-          echo "Freeing previous DocVault containers (if any)..."
-          docker compose -f docker-compose.yml down --remove-orphans || true
-          docker rm -f docvault-api docvault-web docvault-postgres docvault-redis docvault-celery-worker docvault-celery-beat docvault-nginx 2>/dev/null || true
+          echo "Keeping the live stack on :${WEB_HOST_PORT} until the new containers are ready."
 
           mkdir -p "${STORAGE_HOST_PATH:-/var/lib/docvault}"
 
-          echo "Starting Postgres first..."
+          echo "Ensuring Postgres is up (do not take the public port down)..."
           docker compose -f docker-compose.yml up -d --no-build postgres
 
           echo "Waiting for Postgres..."
