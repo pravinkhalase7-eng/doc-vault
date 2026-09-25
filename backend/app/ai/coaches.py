@@ -6,7 +6,9 @@ import re
 
 from app.ai.gemini.provider import GeminiProvider
 from app.config import get_settings
+from app.logging import get_logger
 
+log = get_logger("coaches")
 settings = get_settings()
 
 ENGLISH_MODE = "english"
@@ -25,7 +27,7 @@ If they ask a question: answer it. Give examples. Then offer one practice line. 
 
 If they send a sentence to correct: show a fully natural version. Fix meaning, tense, spelling, and articles — never teach a sentence that is still wrong. Example: “I went … tomorrow” must become “I’m going … tomorrow” (or “I will go”). Then 1–3 short reasons and one line to say out loud.
 
-If they write Marathi, Hindi, or Hinglish (Roman letters or Devanagari): do not treat it as broken English. Translate the meaning, then teach natural spoken English. Example: “mala bhook lagali” → “I am feeling hungry.” / “I'm hungry.” Never say that the Marathi/Hindi line “sounds natural” as English.
+If they write Marathi, Hindi, or Hinglish (Roman letters or Devanagari): translate the COMPLETE meaning into natural spoken English, then teach that. Keep every part — who, when, where, and the action. Example: “mala aaj shopping la jaycha aahe” → “I have to go shopping today.” Never answer with only the time (“It is today”). Never treat it as broken English. Never say it “sounds natural” as English.
 
 If they are chatting: reply as a conversation partner, then lightly fix slips.
 
@@ -513,6 +515,39 @@ _MOTION_GLOSS = {
     "aalo": "came",
     "aali": "came",
 }
+_NEED_GO = frozenset(
+    {"jaycha", "jaychi", "jayche", "jaychay", "jaaycha", "jayla", "jaayla", "pahije"}
+)
+_FUNCTION_WORDS = frozenset(
+    {
+        "mala",
+        "maala",
+        "mla",
+        "mi",
+        "me",
+        "tu",
+        "la",
+        "madhe",
+        "aahe",
+        "ahe",
+        "aahes",
+        "aahat",
+        "hai",
+        "hain",
+        "hoon",
+        "hu",
+        "the",
+        "and",
+        "to",
+        "a",
+        "an",
+        "majha",
+        "majhi",
+        "majhe",
+        "tumhi",
+        "nahi",
+    }
+) | set(_TIME_GLOSS) | set(_MOTION_GLOSS) | _NEED_GO | set(_EVENT_GLOSS) | set(_PLACE_GLOSS)
 
 
 def _romanize_indic(text: str) -> str:
@@ -537,7 +572,33 @@ def _place_phrase(place: str) -> str:
     return place
 
 
-def _compose_indic_english(text: str) -> tuple[str, str, str] | None:
+def _activity_token(tokens: list[str]) -> str | None:
+    for token in tokens:
+        if token in _FUNCTION_WORDS or token in _INDIC_STRONG or token in _INDIC_WORDS:
+            continue
+        if re.fullmatch(r"[a-z]{3,}", token):
+            return token
+    return None
+
+
+def _go_destination(dest: str) -> str:
+    if dest == "home":
+        return "home"
+    if dest.endswith("ing"):
+        return dest
+    return f"to {_place_phrase(dest)}"
+
+
+def _indic_stub_reply(text: str) -> bool:
+    lowered = (text or "").lower()
+    if re.search(r"\bit is (today|tomorrow|yesterday)\b", lowered):
+        return True
+    if re.search(r"\bthat's (today|tomorrow|yesterday)\b", lowered):
+        return True
+    return False
+
+
+def _compose_indic_english(text: str) -> tuple[str, str | None, str] | None:
     tokens = re.findall(r"[a-zA-Z]+", _romanize_indic(text).lower())
     if not tokens:
         return None
@@ -545,15 +606,20 @@ def _compose_indic_english(text: str) -> tuple[str, str, str] | None:
     place = _first_gloss(tokens, _PLACE_GLOSS)
     event = _first_gloss(tokens, _EVENT_GLOSS)
     motion = _first_gloss(tokens, _MOTION_GLOSS)
+    need_go = any(token in _NEED_GO for token in tokens)
+    activity = _activity_token(tokens)
+    dest = place or activity
     bits: list[str] = []
     if "udya" in tokens or "udyaa" in tokens:
         bits.append("udya = tomorrow")
     elif time:
-        bits.append(f"time = {time}")
+        bits.append(f"aaj/udya = {time}")
     if "sutti" in tokens or "chutti" in tokens or "chhutti" in tokens or "suti" in tokens:
         bits.append("sutti = holiday / day off")
-    if place:
-        bits.append(f"{place} stays {place} in English")
+    if need_go:
+        bits.append("jaycha = have to go")
+    if dest:
+        bits.append(f"{dest} is the activity or place")
     why = "; ".join(bits) if bits else "I turned your Marathi/Hindi words into a natural English sentence."
 
     when = f" {time}" if time else ""
@@ -573,26 +639,24 @@ def _compose_indic_english(text: str) -> tuple[str, str, str] | None:
         target = f" at {_place_phrase(place)}" if place else ""
         english = f"I have an exam{target}{when}."
         return english, None, why
-    if motion in {"going", "coming"} and place:
-        dest = "home" if place == "home" else f"to {_place_phrase(place)}"
-        english = f"I am {motion} {dest}{when}."
-        also = f"I'm {motion} {dest}{when}."
+    if need_go and dest:
+        target = _go_destination(dest)
+        english = f"I have to go {target}{when}."
+        also = f"I'm going {target}{when}."
         return english, also, why
-    if motion == "went" and place:
-        dest = "home" if place == "home" else f"to {_place_phrase(place)}"
-        english = f"I went {dest}{when}."
+    if motion in {"going", "coming"} and dest:
+        target = _go_destination(dest)
+        english = f"I am {motion} {target}{when}."
+        also = f"I'm {motion} {target}{when}."
+        return english, also, why
+    if motion == "went" and dest:
+        target = _go_destination(dest)
+        english = f"I went {target}{when}."
         return english, None, why
-    if place and time and not event:
-        dest = "home" if place == "home" else _place_phrase(place)
-        if place == "home":
-            english = f"I am going home{when}."
-        else:
-            english = f"I have to go to {dest}{when}."
-        also = f"I'm going to {dest}{when}." if place != "home" else f"I'm going home{when}."
-        return english, also, why
-    if time and not place and not event:
-        english = f"It is {time}."
-        also = f"That's {time}."
+    if dest and time:
+        target = _go_destination(dest)
+        english = f"I have to go {target}{when}."
+        also = f"I'm going {target}{when}."
         return english, also, why
     return None
 
@@ -638,15 +702,16 @@ def other_language_english_reply(message: str) -> tuple[str, str] | None:
     composed = _compose_indic_english(raw)
     if composed:
         english, also, why = composed
-        return _other_language_lesson(english, also=also, language=_indic_label(raw), why=why)
+        if not _indic_stub_reply(english):
+            return _other_language_lesson(english, also=also, language=_indic_label(raw), why=why)
     language = _indic_label(raw)
     display = (
         f"That looks like {language}.\n\n"
-        "In English, start with I, then the time (today / tomorrow), then what you need to say.\n\n"
-        "Example:\nmala udya school la sutti aahe → I have a school holiday tomorrow.\n\n"
-        "Say this out loud:\nI have a school holiday tomorrow."
+        "In English, keep the whole meaning: I + what you have to do + when.\n\n"
+        "Example:\nmala aaj shopping la jaycha aahe → I have to go shopping today.\n\n"
+        "Say this out loud:\nI have to go shopping today."
     )
-    spoken = "In English, say: I have a school holiday tomorrow. Use I, then tomorrow, then the rest."
+    spoken = "In English, keep the whole meaning. For example: I have to go shopping today."
     return display, spoken
 
 
@@ -850,6 +915,8 @@ def _gemini_is_weak(reply: str, learner: str, *, asked: bool, question: bool) ->
         return True
     if _sentence_still_wrong(reply):
         return True
+    if _indic_stub_reply(reply):
+        return True
     if looks_like_indic(learner) and "that sounds natural" in lowered:
         return True
     if "mix in one english word" in lowered or "say the same idea again" in lowered:
@@ -885,11 +952,17 @@ async def generate_coach_reply(
         if looks_like_indic(learner):
             prompt += (
                 "They wrote Marathi, Hindi, or Hinglish (Roman or Devanagari). "
-                "Translate the meaning into natural spoken English and teach that. "
-                "Do not treat it as broken English. Do not add “the” and call it done. "
-                "Do not say it sounds natural. Give 1–2 English sentences to say out loud.\n"
-                f"Local first pass:\n{fallback[:1200]}\n"
+                "Translate the COMPLETE meaning into natural spoken English and teach that. "
+                "Keep who, when, where, and the action. "
+                "Example: mala aaj shopping la jaycha aahe → I have to go shopping today. "
+                "Never answer with only the time, like “It is today”. "
+                "Do not treat it as broken English. Do not say it sounds natural.\n"
             )
+            if fallback and not _indic_stub_reply(fallback):
+                prompt += (
+                    f"A possible English version (ignore it if it dropped any part of the meaning):\n"
+                    f"{fallback[:1200]}\n"
+                )
         elif question:
             prompt += (
                 "They asked a real question. Answer it like a human tutor: useful first, then one next step. "
@@ -919,8 +992,10 @@ async def generate_coach_reply(
             if mode == ENGLISH_MODE and _gemini_is_weak(
                 display, learner, asked=asked, question=question
             ):
+                if _indic_stub_reply(fallback):
+                    return display, cloud_spoken, True, settings.gemini_model
                 return fallback, spoken, False, "local"
             return display, cloud_spoken, True, settings.gemini_model
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("coach_gemini_failed", error=type(exc).__name__)
     return fallback, spoken, False, "local"

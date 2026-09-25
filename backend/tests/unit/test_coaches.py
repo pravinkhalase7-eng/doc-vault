@@ -133,6 +133,17 @@ def test_english_teaches_marathi_school_holiday():
     assert "school" in today.lower()
 
 
+def test_english_teaches_marathi_shopping_today():
+    reply, spoken = local_english_reply("mala aaj shopping la jaycha aahe")
+    lowered = reply.lower()
+    assert "it is today" not in lowered
+    assert "that's today" not in lowered
+    assert "shopping" in lowered
+    assert "today" in lowered
+    assert "have to go shopping" in lowered or "going shopping" in lowered
+    assert "shopping" in spoken.lower()
+
+
 def test_pcm_wraps_as_wav():
     framed = pcm16_to_wav(b"\x00\x00" * 80)
     assert framed[:4] == b"RIFF"
