@@ -27,7 +27,7 @@ If they ask a question: answer it. Give examples. Then offer one practice line. 
 
 If they send a sentence to correct: show a fully natural version. Fix meaning, tense, spelling, and articles — never teach a sentence that is still wrong. Example: “I went … tomorrow” must become “I’m going … tomorrow” (or “I will go”). Then 1–3 short reasons and one line to say out loud.
 
-If they write Marathi, Hindi, or Hinglish (Roman letters or Devanagari): translate the COMPLETE meaning into natural spoken English, then teach that. Keep every part — who, when, where, and the action. Example: “mala aaj shopping la jaycha aahe” → “I have to go shopping today.” Never answer with only the time (“It is today”). Never treat it as broken English. Never say it “sounds natural” as English.
+If they write Marathi, Hindi, or Hinglish (Roman letters or Devanagari): translate the COMPLETE meaning into natural spoken English, then teach that. Keep every part — who, when, where, and the action. Examples: “mala aaj shopping la jaycha aahe” → “I have to go shopping today.” “mala udya firayala jaycha” → “I have to go out tomorrow.” (firayala = to go out, not a place name.) Never copy Roman Marathi into the English sentence. Never answer with only the time (“It is today”). Never treat it as broken English.
 
 If they are chatting: reply as a conversation partner, then lightly fix slips.
 
@@ -466,6 +466,8 @@ _DEVANAGARI_GLOSS = {
     "तहान": "tahaan",
     "थक": "thakla",
     "मी": "mi",
+    "फिरयला": "firayala",
+    "फिराला": "firayala",
 }
 
 _TIME_GLOSS = {
@@ -549,6 +551,72 @@ _FUNCTION_WORDS = frozenset(
     }
 ) | set(_TIME_GLOSS) | set(_MOTION_GLOSS) | _NEED_GO | set(_EVENT_GLOSS) | set(_PLACE_GLOSS)
 
+_AYLA_SUFFIXES = ("ayala", "aylaa", "ayla", "aychi", "aycha", "ayche", "yala", "yla")
+_AYLA_STEMS: dict[str, str] = {
+    "fir": "go out",
+    "phir": "go out",
+    "fira": "go out",
+    "phira": "go out",
+    "ghum": "go out",
+    "kha": "eat",
+    "khav": "eat",
+    "bagh": "see",
+    "pah": "see",
+    "bol": "talk",
+    "nigh": "go out",
+    "khel": "play",
+    "shik": "learn",
+    "zop": "sleep",
+    "jhop": "sleep",
+    "nach": "dance",
+    "has": "laugh",
+    "uth": "get up",
+    "bas": "sit",
+}
+
+
+def _ayla_stem(token: str) -> str | None:
+    for suffix in _AYLA_SUFFIXES:
+        if token.endswith(suffix) and len(token) - len(suffix) >= 2:
+            return token[: -len(suffix)]
+    return None
+
+
+def _looks_like_roman_marathi(token: str) -> bool:
+    if token in _FUNCTION_WORDS or token in _INDIC_STRONG or token in _NEED_GO:
+        return True
+    if _ayla_stem(token):
+        return True
+    return bool(re.search(r"(?:ayala|ayla|yala|aychi|aycha|cha|chi|che|toy)$", token))
+
+
+def _likely_english_loan(token: str) -> bool:
+    """Only real English (shopping, movie). Never leftover Marathi."""
+    if len(token) < 4:
+        return False
+    if token in _PLACE_GLOSS or token in _FUNCTION_WORDS or token in _INDIC_STRONG:
+        return False
+    if _looks_like_roman_marathi(token) or _ayla_stem(token):
+        return False
+    if token.endswith("ing"):
+        return True
+    if token.endswith(("la", "na", "ne", "te", "to", "tay")):
+        return False
+    return bool(re.fullmatch(r"[a-z]+", token))
+
+
+def _ayla_action(tokens: list[str]) -> tuple[str, str] | None:
+    for token in tokens:
+        stem = _ayla_stem(token)
+        if not stem:
+            continue
+        for key in sorted(_AYLA_STEMS, key=len, reverse=True):
+            if stem == key or stem.startswith(key):
+                return _AYLA_STEMS[key], token
+        if stem.startswith("fir") or stem.startswith("phir"):
+            return "go out", token
+    return None
+
 
 def _romanize_indic(text: str) -> str:
     out = text or ""
@@ -574,9 +642,7 @@ def _place_phrase(place: str) -> str:
 
 def _activity_token(tokens: list[str]) -> str | None:
     for token in tokens:
-        if token in _FUNCTION_WORDS or token in _INDIC_STRONG or token in _INDIC_WORDS:
-            continue
-        if re.fullmatch(r"[a-z]{3,}", token):
+        if _likely_english_loan(token):
             return token
     return None
 
@@ -598,6 +664,20 @@ def _indic_stub_reply(text: str) -> bool:
     return False
 
 
+def _echoes_marathi_as_english(english: str, learner: str) -> bool:
+    """True if we copied a Marathi word into English as if it were a place."""
+    lowered = (english or "").lower()
+    known = _FUNCTION_WORDS | set(_TIME_GLOSS) | _NEED_GO | set(_PLACE_GLOSS) | set(_EVENT_GLOSS)
+    for token in re.findall(r"[a-zA-Z]+", (learner or "").lower()):
+        if token in known or _likely_english_loan(token):
+            continue
+        if len(token) < 4:
+            continue
+        if re.search(rf"\b(?:to|at|in)\s+{re.escape(token)}\b", lowered):
+            return True
+    return False
+
+
 def _compose_indic_english(text: str) -> tuple[str, str | None, str] | None:
     tokens = re.findall(r"[a-zA-Z]+", _romanize_indic(text).lower())
     if not tokens:
@@ -609,6 +689,11 @@ def _compose_indic_english(text: str) -> tuple[str, str | None, str] | None:
     need_go = any(token in _NEED_GO for token in tokens)
     activity = _activity_token(tokens)
     dest = place or activity
+    if dest and not place and not _likely_english_loan(dest):
+        dest = None
+    action_hit = _ayla_action(tokens)
+    action = action_hit[0] if action_hit else None
+    action_word = action_hit[1] if action_hit else None
     bits: list[str] = []
     if "udya" in tokens or "udyaa" in tokens:
         bits.append("udya = tomorrow")
@@ -618,7 +703,9 @@ def _compose_indic_english(text: str) -> tuple[str, str | None, str] | None:
         bits.append("sutti = holiday / day off")
     if need_go:
         bits.append("jaycha = have to go")
-    if dest:
+    if action_word and action:
+        bits.append(f"{action_word} = {action}")
+    elif dest:
         bits.append(f"{dest} is the activity or place")
     why = "; ".join(bits) if bits else "I turned your Marathi/Hindi words into a natural English sentence."
 
@@ -639,6 +726,14 @@ def _compose_indic_english(text: str) -> tuple[str, str | None, str] | None:
         target = f" at {_place_phrase(place)}" if place else ""
         english = f"I have an exam{target}{when}."
         return english, None, why
+    if action and (need_go or motion in {"going", "coming"} or not dest):
+        if action.startswith("go "):
+            english = f"I have to {action}{when}."
+            also = f"I'm {action.replace('go ', 'going ', 1)}{when}."
+        else:
+            english = f"I have to {action}{when}."
+            also = f"I'm going to {action}{when}."
+        return english, also, why
     if need_go and dest:
         target = _go_destination(dest)
         english = f"I have to go {target}{when}."
@@ -702,7 +797,7 @@ def other_language_english_reply(message: str) -> tuple[str, str] | None:
     composed = _compose_indic_english(raw)
     if composed:
         english, also, why = composed
-        if not _indic_stub_reply(english):
+        if not _indic_stub_reply(english) and not _echoes_marathi_as_english(english, raw):
             return _other_language_lesson(english, also=also, language=_indic_label(raw), why=why)
     language = _indic_label(raw)
     display = (
@@ -917,6 +1012,8 @@ def _gemini_is_weak(reply: str, learner: str, *, asked: bool, question: bool) ->
         return True
     if _indic_stub_reply(reply):
         return True
+    if looks_like_indic(learner) and _echoes_marathi_as_english(reply, learner):
+        return True
     if looks_like_indic(learner) and "that sounds natural" in lowered:
         return True
     if "mix in one english word" in lowered or "say the same idea again" in lowered:
@@ -954,11 +1051,18 @@ async def generate_coach_reply(
                 "They wrote Marathi, Hindi, or Hinglish (Roman or Devanagari). "
                 "Translate the COMPLETE meaning into natural spoken English and teach that. "
                 "Keep who, when, where, and the action. "
-                "Example: mala aaj shopping la jaycha aahe → I have to go shopping today. "
+                "Examples: mala aaj shopping la jaycha aahe → I have to go shopping today. "
+                "mala udya firayala jaycha → I have to go out tomorrow. "
+                "Never copy an unknown Roman Marathi word into English as a place name "
+                "(wrong: go to firayala). Translate it (firayala → go out).\n"
                 "Never answer with only the time, like “It is today”. "
                 "Do not treat it as broken English. Do not say it sounds natural.\n"
             )
-            if fallback and not _indic_stub_reply(fallback):
+            if (
+                fallback
+                and not _indic_stub_reply(fallback)
+                and not _echoes_marathi_as_english(fallback, learner)
+            ):
                 prompt += (
                     f"A possible English version (ignore it if it dropped any part of the meaning):\n"
                     f"{fallback[:1200]}\n"

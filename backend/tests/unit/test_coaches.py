@@ -144,6 +144,22 @@ def test_english_teaches_marathi_shopping_today():
     assert "shopping" in spoken.lower()
 
 
+def test_english_teaches_marathi_go_out_tomorrow():
+    reply, spoken = local_english_reply("mala udya firayala jaycha")
+    lowered = reply.lower()
+    assert "go to firayala" not in lowered
+    assert "have to go out tomorrow" in lowered
+    assert "going out tomorrow" in lowered
+    assert "go out" in spoken.lower()
+
+
+def test_english_does_not_copy_unknown_marathi_as_a_place():
+    reply, _ = local_english_reply("mala udya xyzayla jaycha")
+    assert "to xyzayla" not in reply.lower()
+    reply2, _ = local_english_reply("mala udya firayala jaycha")
+    assert "to firayala" not in reply2.lower()
+
+
 def test_pcm_wraps_as_wav():
     framed = pcm16_to_wav(b"\x00\x00" * 80)
     assert framed[:4] == b"RIFF"
