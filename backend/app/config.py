@@ -81,6 +81,7 @@ class Settings(BaseSettings):
 
     google_client_id: str = ""
     google_client_secret: str = ""
+    google_api_key: str = ""
     google_tts_api_key: str = ""
     gemini_tts_model: str = "gemini-3.1-flash-tts-preview"
     gemini_tts_voice: str = "Kore"
@@ -101,6 +102,7 @@ class Settings(BaseSettings):
         "gemini_api_key",
         "google_client_id",
         "google_client_secret",
+        "google_api_key",
         "google_tts_api_key",
         mode="before",
     )

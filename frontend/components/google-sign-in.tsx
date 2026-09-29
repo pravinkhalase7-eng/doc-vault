@@ -18,6 +18,13 @@ declare global {
           initialize: (opts: { client_id: string; callback: (res: { credential: string }) => void }) => void;
           renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void;
         };
+        oauth2?: {
+          initTokenClient: (opts: {
+            client_id: string;
+            scope: string;
+            callback: (res: { access_token?: string; error?: string }) => void;
+          }) => { requestAccessToken: (opts?: { prompt?: string }) => void };
+        };
       };
     };
   }

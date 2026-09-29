@@ -4,8 +4,9 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import { toast } from "sonner";
-import { Camera, X } from "lucide-react";
+import { Camera, FolderDown, X } from "lucide-react";
 import { api, apiForm } from "@/lib/api";
+import { requestDriveReadonlyToken } from "@/lib/google-drive";
 import { VAULT_FILE_ACCEPT } from "@/lib/file-accept";
 import { takeSharedFiles } from "@/lib/share-target";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,8 @@ function UploadForm() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [targetId, setTargetId] = useState(queryCollection);
   const [busy, setBusy] = useState(false);
+  const [driveUrl, setDriveUrl] = useState("");
+  const [driveBusy, setDriveBusy] = useState(false);
 
   const collectionName = collections.find((col) => col.id === targetId)?.name?.trim() || "";
 
@@ -122,13 +125,56 @@ function UploadForm() {
     }
   }
 
+  async function importDriveFolder() {
+    const url = driveUrl.trim();
+    if (!url) {
+      toast.error("Paste a Google Drive folder link");
+      return;
+    }
+    setDriveBusy(true);
+    try {
+      const config = await api<{ enabled: boolean; client_id: string | null }>("/auth/google/config");
+      let accessToken: string | undefined;
+      if (config.client_id) {
+        accessToken = await requestDriveReadonlyToken(config.client_id);
+      }
+      const result = await api<{
+        documents: Uploaded[];
+        skipped?: { name: string; reason: string }[];
+      }>("/documents/import-drive", {
+        method: "POST",
+        body: JSON.stringify({
+          url,
+          access_token: accessToken,
+          collection_id: targetId || undefined,
+        }),
+      });
+      const imported = result.documents?.length || 0;
+      const skipped = result.skipped?.length || 0;
+      const dupes = (result.documents || []).filter((doc) => doc.duplicate).length;
+      toast.success(
+        skipped
+          ? `Imported ${imported} file${imported === 1 ? "" : "s"}. Skipped ${skipped}.`
+          : dupes
+            ? `Imported. ${dupes} already in vault.`
+            : collectionName
+              ? `Imported to ${collectionName}`
+              : "Imported from Google Drive",
+      );
+      router.push(targetId ? `/collections?folder=${encodeURIComponent(targetId)}` : "/documents");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Drive import failed");
+      setDriveBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl">Add files</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {collectionName ? `Saves to ${collectionName}` : "Saves to Default"}. Scan a page on your phone, or choose a file.
+            {collectionName ? `Saves to ${collectionName}` : "Saves to Default"}. Scan a page, choose files, or import a Google Drive folder.
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -159,6 +205,33 @@ function UploadForm() {
           </select>
         </label>
       )}
+
+      <div className="space-y-3 rounded-2xl border bg-card p-4">
+        <div className="flex items-center gap-2">
+          <FolderDown className="size-4 text-muted-foreground" />
+          <p className="text-sm font-medium">Google Drive folder</p>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Paste a shared folder link. Google will ask once to read Drive, then every supported file is saved here.
+        </p>
+        <Input
+          value={driveUrl}
+          onChange={(event) => setDriveUrl(event.target.value)}
+          placeholder="https://drive.google.com/drive/folders/…"
+          inputMode="url"
+          autoComplete="off"
+          disabled={driveBusy}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          className="rounded-full"
+          disabled={driveBusy || busy}
+          onClick={() => void importDriveFolder()}
+        >
+          {driveBusy ? "Importing…" : "Import folder"}
+        </Button>
+      </div>
 
       <div
         {...getRootProps()}

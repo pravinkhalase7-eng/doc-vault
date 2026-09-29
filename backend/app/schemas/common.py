@@ -268,6 +268,12 @@ class SpeakRequest(APIModel):
     language: str | None = "en-IN"
 
 
+class DriveImportRequest(APIModel):
+    url: str = Field(min_length=8, max_length=500)
+    access_token: str | None = Field(default=None, max_length=4096)
+    collection_id: str | None = None
+
+
 class ChatNoteRequest(APIModel):
     user_content: str = Field(min_length=1, max_length=4000)
     assistant_content: str = Field(min_length=1, max_length=4000)

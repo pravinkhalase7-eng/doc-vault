@@ -14,6 +14,8 @@ from app.auth.service import client_ip, get_current_user, get_file_user, log_sec
 from app.database import get_db
 from app.documents.processing import enqueue_document_processing
 from app.collections.service import collections_for_documents, place_uploaded_document, move_document_to_collection
+from app.config import get_settings
+from app.documents.drive_import import collect_drive_files, download_drive_file, parse_drive_folder_id
 from app.documents.service import (
     create_upload,
     get_document_for_user,
@@ -29,7 +31,7 @@ from app.exceptions import AppError
 from app.models.document import Document, DocumentMetadata
 from app.models.enums import VerificationStatus
 from app.models.user import User
-from app.schemas.common import ConfirmMetadataRequest, DocumentMove, DocumentUpdate
+from app.schemas.common import ConfirmMetadataRequest, DocumentMove, DocumentUpdate, DriveImportRequest
 from app.storage.local import content_disposition_header, resolve_key, stored_file_path
 from app.documents.ocr import generate_reel_images, reel_preview_is_sideways
 
@@ -69,6 +71,53 @@ async def upload(
             background.add_task(_enqueue_processing, doc.id)
         created.append({**serialize_document(doc), "duplicate": duplicate, "collection_id": placed.id})
     return ok({"documents": created, "message": "Upload successful. Processing document..."})
+
+
+@router.post("/import-drive")
+async def import_drive(
+    body: DriveImportRequest,
+    background: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    cfg = get_settings()
+    if user.email.lower() == (cfg.guest_email or "").strip().lower():
+        raise AppError("GOOGLE_GUEST", "The guest vault cannot import Google Drive folders. Create your own vault.", 400)
+    folder_id = parse_drive_folder_id(body.url)
+    access_token = (body.access_token or "").strip() or None
+    api_key = (cfg.google_api_key or "").strip() or None
+    if not access_token and not api_key:
+        raise AppError(
+            "DRIVE_AUTH_REQUIRED",
+            "Allow Google Drive access once, or download the folder and upload the files here.",
+            400,
+        )
+    files, skipped = await collect_drive_files(folder_id, access_token=access_token, api_key=api_key)
+    if not files:
+        raise AppError(
+            "DRIVE_EMPTY",
+            skipped[0]["reason"] if skipped else "That Drive folder has no files DocVault can store",
+            400,
+        )
+    created = []
+    target = (body.collection_id or "").strip() or None
+    for item in files:
+        try:
+            data, filename = await download_drive_file(item, access_token=access_token, api_key=api_key)
+            doc, duplicate = await create_upload(db, user.id, filename=filename, data=data, title=Path(filename).stem)
+            if target and not duplicate:
+                placed = await place_uploaded_document(db, user.id, doc.id, target)
+            else:
+                placed = await place_uploaded_document(db, user.id, doc.id, None)
+            await db.commit()
+            if not duplicate:
+                background.add_task(_enqueue_processing, doc.id)
+            created.append({**serialize_document(doc), "duplicate": duplicate, "collection_id": placed.id})
+        except AppError as exc:
+            skipped.append({"name": item.name, "reason": exc.message})
+    if not created:
+        raise AppError("DRIVE_EMPTY", skipped[0]["reason"] if skipped else "Could not import files from that folder", 400)
+    return ok({"documents": created, "skipped": skipped, "message": "Drive folder imported."})
 
 
 @router.get("")

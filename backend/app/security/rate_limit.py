@@ -15,6 +15,7 @@ LIMITS = {
     "/api/v1/auth/google": (10, 60),
     "/api/v1/auth/forgot-password": (5, 60),
     "/api/v1/documents/upload": (30, 60),
+    "/api/v1/documents/import-drive": (6, 60),
     "/api/v1/documents/export": (3, 300),
     "/api/v1/ingest/email": (30, 300),
     "/api/v1/ingest/poll": (6, 60),
