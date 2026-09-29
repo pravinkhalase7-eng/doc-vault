@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
+from html import unescape
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlencode, urlparse, urlunparse
 
 import httpx
 
@@ -343,7 +344,20 @@ _HREF_FILE_RE = re.compile(
     r'<a[^>]+href="https://drive\.google\.com/file/d/([a-zA-Z0-9_-]{25,})/[^"]*"[^>]*>([^<]*)',
     re.I,
 )
-_CONFIRM_RE = re.compile(r"confirm=([0-9A-Za-z_-]+)")
+_FORM_RE = re.compile(
+    r'<form[^>]+id="download-form"[^>]*action="([^"]+)"[^>]*>([\s\S]{0,8000}?)</form>',
+    re.I,
+)
+_HIDDEN_INPUT_RE = re.compile(r"<input[^>]*>", re.I)
+_INPUT_NAME_RE = re.compile(r'\bname=["\']([^"\']+)["\']', re.I)
+_INPUT_VALUE_RE = re.compile(r'\bvalue=["\']([^"\']*)["\']', re.I)
+_DOWNLOAD_URL_JSON_RE = re.compile(r'"downloadUrl"\s*:\s*"([^"]+)"')
+_UC_HREF_RE = re.compile(r'href="(/uc\?export=download[^"]+)"', re.I)
+_PUBLIC_DOWNLOAD_HOSTS = {
+    "drive.google.com",
+    "docs.google.com",
+    "drive.usercontent.google.com",
+}
 
 
 def parse_public_folder_listing(html: str, folder_id: str) -> tuple[list[DriveFile], list[str]]:
@@ -374,8 +388,9 @@ def parse_public_folder_listing(html: str, folder_id: str) -> tuple[list[DriveFi
             "presentation": "application/vnd.google-apps.presentation",
         }.get(kind.lower(), "")
         add_file(file_id, "file", mime)
-    for file_id in _DATA_ID_RE.findall(text):
-        add_file(file_id, "file")
+    if not files:
+        for file_id in _DATA_ID_RE.findall(text):
+            add_file(file_id, "file")
     for nested in _FOLDER_LINK_RE.findall(text):
         if nested == current or nested in seen_folders:
             continue
@@ -439,21 +454,119 @@ async def _walk_public_folder(
 
 async def _download_public_bytes(client: httpx.AsyncClient, file_id: str) -> bytes:
     file_id = _drive_id(file_id)
-    url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
-    data = await _get_bytes(client, url, headers={}, params={})
-    if data.lstrip()[:15].lower().startswith(b"<!doctype html") or data.lstrip()[:6].lower().startswith(b"<html"):
-        text = data.decode("utf-8", "replace")
-        match = _CONFIRM_RE.search(text)
-        if not match:
-            raise AppError("DRIVE_FORBIDDEN", "Google Drive asked for extra confirmation on that file", 403)
-        data = await _get_bytes(
-            client,
-            f"https://drive.google.com/uc?export=download&id={file_id}&confirm={match.group(1)}",
-            headers={},
-            params={},
-        )
-    if data.lstrip()[:15].lower().startswith(b"<!doctype html") or data.lstrip()[:6].lower().startswith(b"<html"):
+    urls = [
+        f"https://drive.google.com/uc?id={file_id}&export=download",
+        f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t",
+    ]
+    last_error: AppError | None = None
+    for url in urls:
+        try:
+            return await _follow_public_download(client, url, file_id=file_id, hops=0)
+        except AppError as exc:
+            last_error = exc
+    raise last_error or AppError("DRIVE_ERROR", "Google Drive could not download a file", 400)
+
+
+async def _follow_public_download(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    file_id: str,
+    hops: int,
+) -> bytes:
+    if hops > 5:
+        raise AppError("DRIVE_ERROR", "Google Drive could not download a file", 400)
+    url = _safe_public_download_url(url)
+    try:
+        response = await client.get(url)
+    except httpx.HTTPError as exc:
+        raise AppError("DRIVE_UNREACHABLE", "Could not download from Google Drive", 502) from exc
+    if response.status_code in {401, 403}:
         raise AppError("DRIVE_FORBIDDEN", "That Drive file is not shared for download", 403)
+    if response.status_code == 404:
+        raise AppError("DRIVE_NOT_FOUND", "A file in that folder was not found", 404)
+    if response.status_code >= 400:
+        raise AppError("DRIVE_ERROR", "Google Drive could not download a file", 400)
+    data = response.content or b""
+    ctype = (response.headers.get("content-type") or "").lower()
+    disposition = (response.headers.get("content-disposition") or "").lower()
+    if "attachment" in disposition or _looks_binary_download(ctype, data):
+        return _limited_bytes(data)
+    if ctype.startswith("text/html") or _looks_html(data):
+        nxt = public_download_url_from_html(data.decode("utf-8", "replace"), file_id)
+        if not nxt:
+            raise AppError("DRIVE_FORBIDDEN", "That Drive file is not shared for download", 403)
+        return await _follow_public_download(client, nxt, file_id=file_id, hops=hops + 1)
+    if data[:1] == b"{" and b"error" in data[:200]:
+        raise AppError("DRIVE_ERROR", "Google Drive could not download a file", 400)
+    return _limited_bytes(data)
+
+
+def public_download_url_from_html(html: str, file_id: str) -> str | None:
+    """Turn Google's virus-scan / confirm HTML into the next download URL."""
+    text = unescape(html or "").replace("&amp;", "&")
+    form = _FORM_RE.search(text)
+    if form:
+        action = form.group(1).strip() or "https://drive.usercontent.google.com/download"
+        parsed = urlparse(action)
+        host = (parsed.hostname or "drive.usercontent.google.com").lower()
+        path = parsed.path or "/download"
+        query = parse_qs(parsed.query)
+        for tag in _HIDDEN_INPUT_RE.findall(form.group(2)):
+            name_match = _INPUT_NAME_RE.search(tag)
+            if not name_match:
+                continue
+            value_match = _INPUT_VALUE_RE.search(tag)
+            query[name_match.group(1)] = [value_match.group(1) if value_match else ""]
+        query.setdefault("id", [file_id])
+        query.setdefault("export", ["download"])
+        url = urlunparse(("https", host, path, "", urlencode(query, doseq=True), ""))
+        return _safe_public_download_url(url)
+    href = _UC_HREF_RE.search(text)
+    if href:
+        return _safe_public_download_url("https://drive.google.com" + unescape(href.group(1)))
+    json_url = _DOWNLOAD_URL_JSON_RE.search(text)
+    if json_url:
+        raw = json_url.group(1).replace("\\u003d", "=").replace("\\u0026", "&").replace("\\/", "/")
+        return _safe_public_download_url(raw)
+    uuid = re.search(r'name=["\']uuid["\'][^>]*value=["\']([^"\']+)["\']', text, re.I)
+    confirm = re.search(r'name=["\']confirm["\'][^>]*value=["\']([^"\']+)["\']', text, re.I)
+    if uuid or confirm:
+        params = {"id": file_id, "export": "download", "confirm": (confirm.group(1) if confirm else "t")}
+        if uuid:
+            params["uuid"] = uuid.group(1)
+        return _safe_public_download_url(
+            "https://drive.usercontent.google.com/download?" + urlencode(params)
+        )
+    return None
+
+
+def _safe_public_download_url(url: str) -> str:
+    parsed = urlparse((url or "").strip())
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or host not in _PUBLIC_DOWNLOAD_HOSTS:
+        raise AppError("DRIVE_ERROR", "Google Drive could not download a file", 400)
+    return urlunparse(parsed)
+
+
+def _looks_html(data: bytes) -> bool:
+    head = data.lstrip()[:20].lower()
+    return head.startswith(b"<!doctype html") or head.startswith(b"<html")
+
+
+def _looks_binary_download(content_type: str, data: bytes) -> bool:
+    if _looks_html(data):
+        return False
+    return content_type.startswith(
+        ("image/", "application/pdf", "application/octet-stream", "application/zip", "application/vnd", "video/")
+    ) or data.startswith((b"%PDF", b"\xff\xd8\xff", b"\x89PNG"))
+
+
+def _limited_bytes(data: bytes) -> bytes:
+    if not data:
+        raise AppError("EMPTY_FILE", "A file in that folder is empty", 400)
+    if len(data) > settings.max_upload_size:
+        raise AppError("FILE_TOO_LARGE", "A file in that folder is larger than the vault limit", 413)
     return data
 
 

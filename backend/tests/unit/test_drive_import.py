@@ -55,3 +55,21 @@ def test_parse_public_folder_listing_reads_embedded_entries():
     assert folders == []
     named = next(item for item in files if item.id == "1abcFileIdWithoutEntry1234567")
     assert named.name == "Photo from Shared"
+
+
+def test_public_download_url_from_confirm_form():
+    from app.documents.drive_import import public_download_url_from_html
+
+    html = """
+    <form id="download-form" action="https://drive.usercontent.google.com/download">
+      <input type="hidden" name="id" value="1abcFileIdWithoutEntry1234567">
+      <input type="hidden" name="export" value="download">
+      <input type="hidden" name="confirm" value="t">
+      <input type="hidden" name="uuid" value="11111111-2222-3333-4444-555555555555">
+    </form>
+    """
+    url = public_download_url_from_html(html, "1abcFileIdWithoutEntry1234567")
+    assert url is not None
+    assert "drive.usercontent.google.com" in url
+    assert "uuid=11111111-2222-3333-4444-555555555555" in url
+    assert "confirm=t" in url
