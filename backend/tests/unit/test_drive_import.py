@@ -29,3 +29,9 @@ def test_skip_reason_keeps_pdf_and_exports_docs():
     assert skip_reason(DriveFile("abc1234567", "pass.pdf", "application/pdf")) is None
     assert skip_reason(DriveFile("abc1234567", "Notes", "application/vnd.google-apps.document")) is None
     assert skip_reason(DriveFile("abc1234567", "Form", "application/vnd.google-apps.form"))
+
+
+def test_skip_reason_keeps_photos_without_an_extension():
+    assert skip_reason(DriveFile("abc1234567", "Photo from Shared", "image/jpeg")) is None
+    assert skip_reason(DriveFile("abc1234567", "Photo from Shared", "application/octet-stream")) is None
+    assert skip_reason(DriveFile("abc1234567", "Photo from Shared", "")) is None

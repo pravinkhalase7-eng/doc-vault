@@ -38,23 +38,44 @@ export async function requestDriveReadonlyToken(clientId: string): Promise<strin
       reject(new Error("Google Drive access is not available"));
       return;
     }
+    let settled = false;
+    const finish = (error?: Error, token?: string) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      if (token) resolve(token);
+      else reject(error || new Error("Could not open Google Drive"));
+    };
+    const timer = window.setTimeout(() => {
+      finish(new Error("Google Drive access timed out. Allow the popup, then click Import again."));
+    }, 120000);
     const client = oauth2.initTokenClient({
       client_id: clientId,
       scope: DRIVE_READONLY,
       callback: (res) => {
         if (res.error || !res.access_token) {
-          reject(
+          finish(
             new Error(
               res.error === "access_denied"
-                ? "Drive access was cancelled"
+                ? "Drive access was cancelled. Click Import again and allow Google Drive."
                 : "Could not open Google Drive. Allow Drive access, or download the folder and drop the files here.",
             ),
           );
           return;
         }
-        resolve(res.access_token);
+        finish(undefined, res.access_token);
+      },
+      error_callback: (err: { type?: string } | unknown) => {
+        const kind = err && typeof err === "object" && "type" in err ? String((err as { type?: string }).type) : "";
+        finish(
+          new Error(
+            kind === "popup_closed"
+              ? "Google sign-in closed before Drive access was allowed. Click Import again."
+              : "Allow the Google popup, then click Import again.",
+          ),
+        );
       },
     });
-    client.requestAccessToken();
+    client.requestAccessToken({ prompt: "consent" });
   });
 }

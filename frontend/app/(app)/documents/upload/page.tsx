@@ -22,6 +22,7 @@ type Collection = {
 
 type Uploaded = {
   id: string;
+  title?: string;
   duplicate?: boolean;
 };
 
@@ -151,12 +152,16 @@ function UploadForm() {
       });
       const imported = result.documents?.length || 0;
       const skipped = result.skipped?.length || 0;
-      const dupes = (result.documents || []).filter((doc) => doc.duplicate).length;
+      const names = (result.documents || [])
+        .map((doc) => doc.title?.trim())
+        .filter(Boolean)
+        .slice(0, 4)
+        .join(", ");
       toast.success(
         skipped
-          ? `Imported ${imported} file${imported === 1 ? "" : "s"}. Skipped ${skipped}.`
-          : dupes
-            ? `Imported. ${dupes} already in vault.`
+          ? `Saved ${imported} file${imported === 1 ? "" : "s"}${names ? `: ${names}` : ""}. Skipped ${skipped}.`
+          : names
+            ? `Saved to vault: ${names}`
             : collectionName
               ? `Imported to ${collectionName}`
               : "Imported from Google Drive",
@@ -212,7 +217,7 @@ function UploadForm() {
           <p className="text-sm font-medium">Google Drive folder</p>
         </div>
         <p className="text-sm text-muted-foreground">
-          Paste a shared folder link. Google will ask once to read Drive, then every supported file is saved here.
+          Paste the folder link, then click Import. Google will ask to read Drive. Files go into the collection above — they will not appear in the drop box below.
         </p>
         <Input
           value={driveUrl}
@@ -229,7 +234,7 @@ function UploadForm() {
           disabled={driveBusy || busy}
           onClick={() => void importDriveFolder()}
         >
-          {driveBusy ? "Importing…" : "Import folder"}
+          {driveBusy ? "Importing…" : "Import files from folder"}
         </Button>
       </div>
 

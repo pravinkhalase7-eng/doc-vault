@@ -10,7 +10,7 @@ import httpx
 
 from app.config import get_settings
 from app.exceptions import AppError
-from app.storage.local import ALLOWED_EXTENSIONS, EXT_TO_MIME
+from app.storage.local import ALLOWED_EXTENSIONS, ALLOWED_MIME, EXT_TO_MIME
 
 settings = get_settings()
 
@@ -42,6 +42,12 @@ SKIP_GOOGLE = {
 }
 
 MIME_TO_EXT = {mime: ext for ext, mime in EXT_TO_MIME.items()}
+MIME_ALIASES = {
+    "image/jpg": "image/jpeg",
+    "image/pjpeg": "image/jpeg",
+    "image/x-png": "image/png",
+}
+SNIFF_LATER = {"", "application/octet-stream", "binary/octet-stream", "application/x-download"}
 
 
 def parse_drive_folder_id(value: str) -> str:
@@ -133,7 +139,7 @@ async def download_drive_file(
 
 
 def skip_reason(item: DriveFile) -> str | None:
-    mime = (item.mime_type or "").strip()
+    mime = _normalize_mime(item.mime_type)
     if mime in SKIP_GOOGLE and mime != "application/vnd.google-apps.folder":
         return "Google app type is not a vault file"
     if mime in GOOGLE_EXPORT:
@@ -144,8 +150,9 @@ def skip_reason(item: DriveFile) -> str | None:
     ext = Path(name).suffix.lower()
     if ext in ALLOWED_EXTENSIONS:
         return None
-    guessed = MIME_TO_EXT.get(mime)
-    if guessed:
+    if mime in ALLOWED_MIME or MIME_TO_EXT.get(mime) or mime.startswith("image/"):
+        return None
+    if mime in SNIFF_LATER:
         return None
     return f"File type {ext or mime or 'unknown'} is not supported"
 
@@ -160,10 +167,15 @@ def _filename_for(item: DriveFile, forced_ext: str | None) -> str:
     ext = Path(name).suffix.lower()
     if ext in ALLOWED_EXTENSIONS:
         return name
-    guessed = MIME_TO_EXT.get(item.mime_type or "")
+    guessed = MIME_TO_EXT.get(_normalize_mime(item.mime_type))
     if guessed:
         return f"{name}{guessed}"
     return name
+
+
+def _normalize_mime(mime: str | None) -> str:
+    raw = (mime or "").strip().lower()
+    return MIME_ALIASES.get(raw, raw)
 
 
 def _auth_headers(access_token: str | None) -> dict[str, str]:
@@ -197,25 +209,45 @@ async def _walk_folder(
         return
     folder_id = _drive_id(folder_id)
     page_token = ""
+    use_all_drives = True
     while True:
         params = {
             **params_base,
             "q": f"'{folder_id}' in parents and trashed = false",
             "fields": "nextPageToken,files(id,name,mimeType,size,shortcutDetails)",
             "pageSize": "100",
-            "supportsAllDrives": "true",
-            "includeItemsFromAllDrives": "true",
         }
+        if use_all_drives:
+            params["supportsAllDrives"] = "true"
+            params["includeItemsFromAllDrives"] = "true"
         if page_token:
             params["pageToken"] = page_token
         payload = await _get_json(client, f"{DRIVE_API}/files", headers=headers, params=params)
-        for raw in payload.get("files") or []:
+        rows = list(payload.get("files") or [])
+        if not rows and not page_token and use_all_drives:
+            use_all_drives = False
+            continue
+        for raw in rows:
             mime = str(raw.get("mimeType") or "")
             file_id = str(raw.get("id") or "")
             name = str(raw.get("name") or "file")
             if mime == "application/vnd.google-apps.shortcut":
-                target = (raw.get("shortcutDetails") or {}).get("targetId")
-                target_mime = (raw.get("shortcutDetails") or {}).get("targetMimeType") or ""
+                details = raw.get("shortcutDetails") or {}
+                if not details.get("targetId"):
+                    meta = await _get_json(
+                        client,
+                        f"{DRIVE_API}/files/{file_id}",
+                        headers=headers,
+                        params={
+                            **params_base,
+                            "fields": "id,name,mimeType,shortcutDetails",
+                            "supportsAllDrives": "true",
+                        },
+                    )
+                    details = meta.get("shortcutDetails") or {}
+                    name = str(meta.get("name") or name)
+                target = details.get("targetId")
+                target_mime = details.get("targetMimeType") or ""
                 if target and DRIVE_ID_RE.fullmatch(str(target)):
                     file_id = str(target)
                     mime = str(target_mime)

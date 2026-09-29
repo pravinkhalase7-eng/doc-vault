@@ -96,7 +96,9 @@ async def import_drive(
     if not files:
         raise AppError(
             "DRIVE_EMPTY",
-            skipped[0]["reason"] if skipped else "That Drive folder has no files DocVault can store",
+            skipped[0]["reason"]
+            if skipped
+            else "No files found in that folder. Open the link in Google Drive, allow Drive access, then try Import again.",
             400,
         )
     created = []
@@ -105,10 +107,7 @@ async def import_drive(
         try:
             data, filename = await download_drive_file(item, access_token=access_token, api_key=api_key)
             doc, duplicate = await create_upload(db, user.id, filename=filename, data=data, title=Path(filename).stem)
-            if target and not duplicate:
-                placed = await place_uploaded_document(db, user.id, doc.id, target)
-            else:
-                placed = await place_uploaded_document(db, user.id, doc.id, None)
+            placed = await place_uploaded_document(db, user.id, doc.id, target)
             await db.commit()
             if not duplicate:
                 background.add_task(_enqueue_processing, doc.id)

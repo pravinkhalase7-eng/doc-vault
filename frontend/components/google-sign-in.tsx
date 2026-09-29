@@ -23,6 +23,7 @@ declare global {
             client_id: string;
             scope: string;
             callback: (res: { access_token?: string; error?: string }) => void;
+            error_callback?: (err: { type?: string } | unknown) => void;
           }) => { requestAccessToken: (opts?: { prompt?: string }) => void };
         };
       };
