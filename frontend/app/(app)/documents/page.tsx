@@ -124,7 +124,7 @@ function DocumentsBrowser() {
   const copy = kind ? KIND_COPY[kind] : null;
 
   useEffect(() => {
-    api<{ items: Doc[] }>("/documents?limit=200").then((d) => setItems(d.items));
+    api<{ items: Doc[] }>("/documents?limit=1000").then((d) => setItems(d.items));
   }, []);
 
   const visible = useMemo(

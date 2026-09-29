@@ -16,7 +16,7 @@ from app.storage.local import ALLOWED_EXTENSIONS, ALLOWED_MIME, EXT_TO_MIME
 settings = get_settings()
 
 DRIVE_API = "https://www.googleapis.com/drive/v3"
-MAX_FILES = 40
+MAX_FILES = 400
 MAX_DEPTH = 5
 DRIVE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{10,128}$")
 CHROME_UA = (
@@ -319,7 +319,7 @@ async def _walk_folder(
                 continue
             if len(files) >= MAX_FILES:
                 skipped.append({"name": name, "reason": f"Import stops after {MAX_FILES} files"})
-                continue
+                return
             files.append(item)
         page_token = str(payload.get("nextPageToken") or "")
         if not page_token:
@@ -439,9 +439,11 @@ async def _walk_public_folder(
             continue
         if len(files) >= MAX_FILES:
             skipped.append({"name": item.name, "reason": f"Import stops after {MAX_FILES} files"})
-            continue
+            return
         files.append(item)
     for nested_id in nested:
+        if len(files) >= MAX_FILES:
+            return
         await _walk_public_folder(
             client,
             nested_id,

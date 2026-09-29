@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 from datetime import date
@@ -77,6 +78,7 @@ async def upload(
 async def import_drive(
     body: DriveImportRequest,
     background: BackgroundTasks,
+    stream: bool = Query(False),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -87,30 +89,74 @@ async def import_drive(
     access_token = (body.access_token or "").strip() or None
     api_key = (cfg.google_api_key or "").strip() or None
     files, skipped = await collect_drive_files(folder_id, access_token=access_token, api_key=api_key)
+    empty_message = (
+        skipped[0]["reason"]
+        if skipped
+        else "No files found in that folder. Open the link in Google Drive, allow Drive access, then try Import again."
+    )
     if not files:
-        raise AppError(
-            "DRIVE_EMPTY",
-            skipped[0]["reason"]
-            if skipped
-            else "No files found in that folder. Open the link in Google Drive, allow Drive access, then try Import again.",
-            400,
-        )
-    created = []
+        raise AppError("DRIVE_EMPTY", empty_message, 400)
     target = (body.collection_id or "").strip() or None
-    for item in files:
-        try:
-            data, filename = await download_drive_file(item, access_token=access_token, api_key=api_key)
-            doc, duplicate = await create_upload(db, user.id, filename=filename, data=data, title=Path(filename).stem)
-            placed = await place_uploaded_document(db, user.id, doc.id, target)
-            await db.commit()
-            if not duplicate:
-                background.add_task(_enqueue_processing, doc.id)
-            created.append({**serialize_document(doc), "duplicate": duplicate, "collection_id": placed.id})
-        except AppError as exc:
-            skipped.append({"name": item.name, "reason": exc.message})
-    if not created:
-        raise AppError("DRIVE_EMPTY", skipped[0]["reason"] if skipped else "Could not import files from that folder", 400)
-    return ok({"documents": created, "skipped": skipped, "message": "Drive folder imported."})
+
+    async def save_item(item) -> dict | None:
+        data, filename = await download_drive_file(item, access_token=access_token, api_key=api_key)
+        doc, duplicate = await create_upload(db, user.id, filename=filename, data=data, title=Path(filename).stem)
+        placed = await place_uploaded_document(db, user.id, doc.id, target)
+        await db.commit()
+        if not duplicate:
+            background.add_task(_enqueue_processing, doc.id)
+        return {**serialize_document(doc), "duplicate": duplicate, "collection_id": placed.id}
+
+    if not stream:
+        created = []
+        for item in files:
+            try:
+                saved = await save_item(item)
+                if saved:
+                    created.append(saved)
+            except AppError as exc:
+                skipped.append({"name": item.name, "reason": exc.message})
+        if not created:
+            raise AppError("DRIVE_EMPTY", skipped[0]["reason"] if skipped else "Could not import files from that folder", 400)
+        return ok({"documents": created, "skipped": skipped, "message": "Drive folder imported."})
+
+    async def events():
+        total = len(files)
+        created = []
+        yield json.dumps({"type": "start", "total": total, "percent": 5, "name": "Finding files"}) + "\n"
+        for index, item in enumerate(files, start=1):
+            try:
+                saved = await save_item(item)
+                if saved:
+                    created.append(saved)
+            except AppError as exc:
+                skipped.append({"name": item.name, "reason": exc.message})
+            percent = 5 + int(95 * index / total) if total else 100
+            yield json.dumps(
+                {
+                    "type": "progress",
+                    "done": index,
+                    "total": total,
+                    "percent": percent,
+                    "name": item.name,
+                }
+            ) + "\n"
+        if not created:
+            yield json.dumps(
+                {
+                    "type": "error",
+                    "code": "DRIVE_EMPTY",
+                    "message": skipped[0]["reason"] if skipped else "Could not import files from that folder",
+                }
+            ) + "\n"
+            return
+        yield json.dumps({"type": "done", "documents": created, "skipped": skipped, "message": "Drive folder imported."}) + "\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("")
@@ -119,7 +165,7 @@ async def list_docs(
     category_id: str | None = None,
     trash: bool = False,
     expiring_days: int | None = Query(None, ge=1, le=3650),
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=1000),
     offset: int = 0,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

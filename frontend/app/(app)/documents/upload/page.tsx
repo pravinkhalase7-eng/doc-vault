@@ -5,11 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import { toast } from "sonner";
 import { Camera, FolderDown, X } from "lucide-react";
-import { api, apiForm } from "@/lib/api";
+import { api, apiFormWithProgress, apiNdjson } from "@/lib/api";
 import { VAULT_FILE_ACCEPT } from "@/lib/file-accept";
 import { takeSharedFiles } from "@/lib/share-target";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Progress, ProgressLabel, ProgressValue } from "@/components/ui/progress";
 
 type Collection = {
   id: string;
@@ -47,6 +48,10 @@ function UploadForm() {
   const [busy, setBusy] = useState(false);
   const [driveUrl, setDriveUrl] = useState("");
   const [driveBusy, setDriveBusy] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
+  const [uploadLabel, setUploadLabel] = useState("");
+  const [drivePercent, setDrivePercent] = useState(0);
+  const [driveLabel, setDriveLabel] = useState("");
 
   const collectionName = collections.find((col) => col.id === targetId)?.name?.trim() || "";
 
@@ -100,15 +105,26 @@ function UploadForm() {
       return;
     }
     setBusy(true);
+    setUploadPercent(0);
+    setUploadLabel("Starting…");
     try {
       const uploaded: Uploaded[] = [];
+      const weight = 100 / files.length;
       for (let index = 0; index < files.length; index += 1) {
+        setUploadLabel(`Uploading ${index + 1} of ${files.length}`);
         const body = new FormData();
         body.append("files", files[index]);
         body.append("title", titles[index].trim());
         if (targetId) body.append("collection_id", targetId);
-        const result = await apiForm<{ documents: Uploaded[] }>("/documents/upload", body);
+        const result = await apiFormWithProgress<{ documents: Uploaded[] }>(
+          "/documents/upload",
+          body,
+          (filePercent) => {
+            setUploadPercent(Math.round(index * weight + (filePercent / 100) * weight));
+          },
+        );
         uploaded.push(...(result.documents || []));
+        setUploadPercent(Math.round((index + 1) * weight));
       }
       const dupes = uploaded.filter((doc) => doc.duplicate).length;
       toast.success(
@@ -132,20 +148,35 @@ function UploadForm() {
       return;
     }
     setDriveBusy(true);
+    setDrivePercent(3);
+    setDriveLabel("Finding files…");
     try {
-      const result = await api<{
-        documents: Uploaded[];
-        skipped?: { name: string; reason: string }[];
-      }>("/documents/import-drive", {
-        method: "POST",
-        body: JSON.stringify({
-          url,
-          collection_id: targetId || undefined,
-        }),
+      const result = await apiNdjson("/documents/import-drive?stream=true", {
+        url,
+        collection_id: targetId || undefined,
+      }, (event) => {
+        if (event.type === "start") {
+          setDrivePercent(Number(event.percent) || 5);
+          setDriveLabel("Finding files…");
+          return;
+        }
+        if (event.type === "progress") {
+          setDrivePercent(Number(event.percent) || 0);
+          const name = String(event.name || "").trim();
+          const done = Number(event.done) || 0;
+          const total = Number(event.total) || 0;
+          setDriveLabel(
+            total
+              ? `Saving ${done} of ${total}${name ? ` · ${name}` : ""}`
+              : name || "Importing…",
+          );
+        }
       });
-      const imported = result.documents?.length || 0;
-      const skipped = result.skipped?.length || 0;
-      const names = (result.documents || [])
+      const documents = (result.documents || []) as Uploaded[];
+      const skippedList = (result.skipped || []) as { name: string; reason: string }[];
+      const imported = documents.length;
+      const skipped = skippedList.length;
+      const names = documents
         .map((doc) => doc.title?.trim())
         .filter(Boolean)
         .slice(0, 4)
@@ -210,7 +241,7 @@ function UploadForm() {
           <p className="text-sm font-medium">Google Drive folder</p>
         </div>
         <p className="text-sm text-muted-foreground">
-          Paste a public folder link, then click Import. Anyone-with-the-link folders do not need Google permission. Files go into the collection above — they will not appear in the drop box below.
+          Paste a public folder link, then click Import. Anyone-with-the-link folders do not need Google permission. Up to 400 files go into the collection above — they will not appear in the drop box below.
         </p>
         <Input
           value={driveUrl}
@@ -227,8 +258,14 @@ function UploadForm() {
           disabled={driveBusy || busy}
           onClick={() => void importDriveFolder()}
         >
-          {driveBusy ? "Importing…" : "Import files from folder"}
+          {driveBusy ? `${Math.max(drivePercent, 1)}%` : "Import files from folder"}
         </Button>
+        {driveBusy && (
+          <Progress value={drivePercent} className="w-full items-center">
+            <ProgressLabel className="min-w-0 truncate text-xs">{driveLabel || "Importing…"}</ProgressLabel>
+            <ProgressValue />
+          </Progress>
+        )}
       </div>
 
       <div
@@ -273,9 +310,17 @@ function UploadForm() {
       </div>
 
       {files.length > 0 && (
-        <Button size="xl" className="rounded-full" disabled={busy || titles.some((title) => !title.trim())} onClick={upload}>
-          {busy ? "Uploading…" : "Upload"}
-        </Button>
+        <div className="space-y-3">
+          {busy && (
+            <Progress value={uploadPercent} className="w-full items-center">
+              <ProgressLabel className="min-w-0 truncate text-xs">{uploadLabel || "Uploading…"}</ProgressLabel>
+              <ProgressValue />
+            </Progress>
+          )}
+          <Button size="xl" className="rounded-full" disabled={busy || titles.some((title) => !title.trim())} onClick={upload}>
+            {busy ? `${Math.max(uploadPercent, 1)}%` : "Upload"}
+          </Button>
+        </div>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 import pytest
 
-from app.documents.drive_import import parse_drive_folder_id, skip_reason, DriveFile
+from app.documents.drive_import import MAX_FILES, parse_drive_folder_id, skip_reason, DriveFile
 from app.exceptions import AppError
 
 
@@ -29,6 +29,10 @@ def test_skip_reason_keeps_pdf_and_exports_docs():
     assert skip_reason(DriveFile("abc1234567", "pass.pdf", "application/pdf")) is None
     assert skip_reason(DriveFile("abc1234567", "Notes", "application/vnd.google-apps.document")) is None
     assert skip_reason(DriveFile("abc1234567", "Form", "application/vnd.google-apps.form"))
+
+
+def test_import_cap_covers_large_photo_folders():
+    assert MAX_FILES >= 250
 
 
 def test_skip_reason_keeps_photos_without_an_extension():

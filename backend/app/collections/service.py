@@ -1,6 +1,7 @@
 import re
+from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import AppError, NotFoundError
@@ -191,6 +192,25 @@ async def place_uploaded_document(
     if collection_id:
         return await move_document_to_collection(db, user_id, document_id, collection_id)
     return await assign_to_default_if_unfiled(db, user_id, document_id)
+
+
+async def trash_collection_files(db: AsyncSession, user_id: str, collection_id: str) -> int:
+    col = await owned_collection(db, user_id, collection_id)
+    ids = (await document_ids_for_collections(db, [col.id])).get(col.id, [])
+    if not ids:
+        return 0
+    result = await db.execute(
+        update(Document)
+        .where(
+            Document.id.in_(ids),
+            Document.user_id == user_id,
+            Document.deleted_at.is_(None),
+            Document.trashed_at.is_(None),
+        )
+        .values(trashed_at=datetime.now(UTC))
+    )
+    await db.flush()
+    return int(result.rowcount or 0)
 
 
 async def delete_owned_collection(db: AsyncSession, user_id: str, collection_id: str) -> Collection:

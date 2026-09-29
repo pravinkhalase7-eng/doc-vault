@@ -112,12 +112,13 @@ function CollectionsBrowser() {
   const [createParentId, setCreateParentId] = useState<string | null>(null);
   const [renameCol, setRenameCol] = useState<Collection | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [emptyId, setEmptyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
     const [cols, documentPage] = await Promise.all([
       api<Collection[]>("/collections"),
-      api<{ items: Doc[] }>("/documents?limit=200"),
+      api<{ items: Doc[] }>("/documents?limit=1000"),
     ]);
     setItems(cols);
     setDocs(documentPage.items);
@@ -160,6 +161,8 @@ function CollectionsBrowser() {
     ? (current.document_ids.map((id) => docs.find((doc) => doc.id === id)).filter(Boolean) as Doc[])
     : [];
   const deleting = items.find((col) => col.id === deleteId) || null;
+  const emptying = items.find((col) => col.id === emptyId) || null;
+  const emptyingCount = emptying ? liveCount(emptying, docs) : 0;
   const createParent = items.find((col) => col.id === createParentId) || null;
 
   function startCreate(parentId: string | null) {
@@ -210,6 +213,19 @@ function CollectionsBrowser() {
     }
   }
 
+  async function emptyCollectionFiles() {
+    if (!emptying) return;
+    try {
+      const result = await api<{ trashed: number }>(`/collections/${emptying.id}/trash-files`, { method: "POST" });
+      const n = result.trashed;
+      toast.success(n === 1 ? "Moved 1 file to trash" : `Moved ${n} files to trash`);
+      setEmptyId(null);
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete files");
+    }
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       {current ? (
@@ -223,6 +239,9 @@ function CollectionsBrowser() {
           onAddFolder={() => startCreate(current.id)}
           onRename={() => setRenameCol(current)}
           onDelete={current.is_default || !canEdit(current) ? undefined : () => setDeleteId(current.id)}
+          onEmptyFiles={
+            canEdit(current) && liveCount(current, docs) > 0 ? () => setEmptyId(current.id) : undefined
+          }
           onShareFamily={canEdit(current) && !current.is_default ? () => toggleFamilyShare(current) : undefined}
         />
       ) : (
@@ -268,6 +287,7 @@ function CollectionsBrowser() {
             onAddFolder={startCreate}
             onRename={setRenameCol}
             onDelete={setDeleteId}
+            onEmptyFiles={setEmptyId}
             onShareFamily={toggleFamilyShare}
           />
           {sharedRoots.length > 0 && (
@@ -330,6 +350,27 @@ function CollectionsBrowser() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={Boolean(emptyId)} onOpenChange={(openDialog) => !openDialog && setEmptyId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete all files in {emptying ? displayName(emptying) : "this folder"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {emptyingCount === 1
+                ? "Move 1 file to trash. You can restore it from Trash. The folder stays."
+                : `Move ${emptyingCount} files to trash. You can restore them from Trash. The folder stays.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={emptyCollectionFiles}>
+              Delete all files
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -344,6 +385,7 @@ function FolderHeader({
   onAddFolder,
   onRename,
   onDelete,
+  onEmptyFiles,
   onShareFamily,
 }: {
   col: Collection;
@@ -355,6 +397,7 @@ function FolderHeader({
   onAddFolder: () => void;
   onRename: () => void;
   onDelete?: () => void;
+  onEmptyFiles?: () => void;
   onShareFamily?: () => void;
 }) {
   const editable = canEdit(col);
@@ -385,7 +428,7 @@ function FolderHeader({
             {countLabel(fileCount, folderCount)}
           </p>
         </div>
-        {(editable || onShareFamily || onDelete) && (
+        {(editable || onShareFamily || onDelete || onEmptyFiles) && (
           <FolderMenu
             col={col}
             compact
@@ -393,23 +436,30 @@ function FolderHeader({
             onAddFolder={onAddFolder}
             onRename={onRename}
             onDelete={onDelete}
+            onEmptyFiles={onEmptyFiles}
             onShareFamily={onShareFamily}
           />
         )}
       </div>
       {editable && (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link
             href={onUpload}
-            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-primary text-sm text-primary-foreground"
+            className="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-primary text-sm text-primary-foreground"
           >
             <Upload className="size-3.5" />
             Upload
           </Link>
-          <Button variant="outline" className="h-9 flex-1 rounded-full" onClick={onAddFolder}>
+          <Button variant="outline" className="h-9 min-w-0 flex-1 rounded-full" onClick={onAddFolder}>
             <Plus className="size-3.5" />
             New folder
           </Button>
+          {onEmptyFiles && (
+            <Button variant="outline" className="h-9 rounded-full" onClick={onEmptyFiles}>
+              <Trash2 className="size-3.5" />
+              Delete all files
+            </Button>
+          )}
         </div>
       )}
     </div>
@@ -424,6 +474,7 @@ function FolderGrid({
   onAddFolder,
   onRename,
   onDelete,
+  onEmptyFiles,
   onShareFamily,
 }: {
   folders: Collection[];
@@ -433,6 +484,7 @@ function FolderGrid({
   onAddFolder: (parentId: string | null) => void;
   onRename: (col: Collection) => void;
   onDelete: (id: string) => void;
+  onEmptyFiles?: (id: string) => void;
   onShareFamily?: (col: Collection) => void;
 }) {
   return (
@@ -464,6 +516,7 @@ function FolderGrid({
                 onAddFolder={() => onAddFolder(col.id)}
                 onRename={() => onRename(col)}
                 onDelete={col.is_default || !editable ? undefined : () => onDelete(col.id)}
+                onEmptyFiles={editable && files > 0 && onEmptyFiles ? () => onEmptyFiles(col.id) : undefined}
                 onShareFamily={editable && !col.is_default && onShareFamily ? () => onShareFamily(col) : undefined}
               />
             </div>
@@ -659,6 +712,7 @@ function FolderMenu({
   onAddFolder,
   onRename,
   onDelete,
+  onEmptyFiles,
   onShareFamily,
   compact,
 }: {
@@ -667,6 +721,7 @@ function FolderMenu({
   onAddFolder: () => void;
   onRename: () => void;
   onDelete?: () => void;
+  onEmptyFiles?: () => void;
   onShareFamily?: () => void;
   compact?: boolean;
 }) {
@@ -706,13 +761,21 @@ function FolderMenu({
             {col.shared_with_family ? "Stop sharing with family" : "Share with family"}
           </DropdownMenuItem>
         )}
-        {onDelete && (
+        {(onEmptyFiles || onDelete) && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              <Trash2 className="size-4" />
-              Delete
-            </DropdownMenuItem>
+            {onEmptyFiles && (
+              <DropdownMenuItem variant="destructive" onClick={onEmptyFiles}>
+                <Trash2 className="size-4" />
+                Delete all files
+              </DropdownMenuItem>
+            )}
+            {onDelete && (
+              <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                <Trash2 className="size-4" />
+                Delete folder
+              </DropdownMenuItem>
+            )}
           </>
         )}
       </DropdownMenuContent>

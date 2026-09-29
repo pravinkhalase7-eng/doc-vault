@@ -16,6 +16,7 @@ from app.collections.service import (
     owned_collection,
     serialize_collection,
     serialize_tree_file,
+    trash_collection_files,
 )
 from app.database import get_db
 from app.documents.service import ensure_quota, get_document_for_user
@@ -303,6 +304,15 @@ async def delete_collection(
     await delete_owned_collection(db, user.id, collection_id)
     await db.commit()
     return ok({"deleted": True, "id": collection_id})
+
+
+@router.post("/collections/{collection_id}/trash-files")
+async def trash_files_in_collection(
+    collection_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    count = await trash_collection_files(db, user.id, collection_id)
+    await db.commit()
+    return ok({"trashed": count})
 
 
 @router.get("/collections/{collection_id}/files")
