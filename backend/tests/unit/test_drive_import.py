@@ -44,7 +44,7 @@ def test_parse_public_folder_listing_reads_embedded_entries():
     <div class="flip-entry" id="entry-0BxyzABCDEFGHIJKLMNOP">
       <div class="flip-entry-title">Photo from Shared</div>
     </div>
-    <a href="https://drive.google.com/file/d/1abcFileIdWithoutEntry1234567/view">file</a>
+    <a href="https://drive.google.com/file/d/1abcFileIdWithoutEntry1234567/view?usp=sharing">Photo from Shared</a>
     """
     files, folders = parse_public_folder_listing(html, "1opLsKJk2k3jdPnWTwnfKIEDMol4amzwS")
     names = {item.name for item in files}
@@ -53,3 +53,5 @@ def test_parse_public_folder_listing_reads_embedded_entries():
     assert "0BxyzABCDEFGHIJKLMNOP" in ids
     assert "1abcFileIdWithoutEntry1234567" in ids
     assert folders == []
+    named = next(item for item in files if item.id == "1abcFileIdWithoutEntry1234567")
+    assert named.name == "Photo from Shared"

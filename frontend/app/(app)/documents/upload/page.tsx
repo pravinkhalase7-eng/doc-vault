@@ -5,8 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import { toast } from "sonner";
 import { Camera, FolderDown, X } from "lucide-react";
-import { api, apiForm, ApiError } from "@/lib/api";
-import { requestDriveReadonlyToken } from "@/lib/google-drive";
+import { api, apiForm } from "@/lib/api";
 import { VAULT_FILE_ACCEPT } from "@/lib/file-accept";
 import { takeSharedFiles } from "@/lib/share-target";
 import { Button } from "@/components/ui/button";
@@ -134,28 +133,16 @@ function UploadForm() {
     }
     setDriveBusy(true);
     try {
-      const config = await api<{ enabled: boolean; client_id: string | null }>("/auth/google/config");
-      const payload: { url: string; access_token?: string; collection_id?: string } = {
-        url,
-        collection_id: targetId || undefined,
-      };
-      let result: { documents: Uploaded[]; skipped?: { name: string; reason: string }[] };
-      try {
-        result = await api("/documents/import-drive", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
-        const retryCodes = ["DRIVE_API_DISABLED", "DRIVE_FORBIDDEN", "DRIVE_EMPTY", "DRIVE_NOT_FOUND"];
-        if (!(err instanceof ApiError) || !retryCodes.includes(err.code) || !config.client_id) {
-          throw err;
-        }
-        payload.access_token = await requestDriveReadonlyToken(config.client_id);
-        result = await api("/documents/import-drive", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-      }
+      const result = await api<{
+        documents: Uploaded[];
+        skipped?: { name: string; reason: string }[];
+      }>("/documents/import-drive", {
+        method: "POST",
+        body: JSON.stringify({
+          url,
+          collection_id: targetId || undefined,
+        }),
+      });
       const imported = result.documents?.length || 0;
       const skipped = result.skipped?.length || 0;
       const names = (result.documents || [])
@@ -223,7 +210,7 @@ function UploadForm() {
           <p className="text-sm font-medium">Google Drive folder</p>
         </div>
         <p className="text-sm text-muted-foreground">
-          Paste the folder link, then click Import. Anyone-with-the-link folders save without extra Google setup. Files go into the collection above — they will not appear in the drop box below.
+          Paste a public folder link, then click Import. Anyone-with-the-link folders do not need Google permission. Files go into the collection above — they will not appear in the drop box below.
         </p>
         <Input
           value={driveUrl}

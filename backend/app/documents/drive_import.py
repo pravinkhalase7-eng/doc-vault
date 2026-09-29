@@ -18,6 +18,10 @@ DRIVE_API = "https://www.googleapis.com/drive/v3"
 MAX_FILES = 40
 MAX_DEPTH = 5
 DRIVE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{10,128}$")
+CHROME_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+)
 
 GOOGLE_EXPORT = {
     "application/vnd.google-apps.document": ("application/pdf", ".pdf"),
@@ -111,26 +115,34 @@ async def collect_drive_files(
     params_base = _auth_params(api_key)
     timeout = httpx.Timeout(30.0, connect=10.0)
     api_error: AppError | None = None
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": "DocVault/1.0"}) as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": CHROME_UA}) as client:
+        await _walk_public_folder(client, folder_id, depth=0, files=files, skipped=skipped, seen=set())
+        if files:
+            return files, skipped
         if access_token or api_key:
             try:
+                api_files: list[DriveFile] = []
+                api_skipped: list[dict[str, str]] = []
                 await _walk_folder(
                     client,
                     folder_id,
                     depth=0,
-                    files=files,
-                    skipped=skipped,
+                    files=api_files,
+                    skipped=api_skipped,
                     headers=headers,
                     params_base=params_base,
                 )
+                files.extend(api_files)
+                skipped.extend(api_skipped)
             except AppError as exc:
                 api_error = exc
-                files.clear()
-        if not files:
-            public_skipped: list[dict[str, str]] = []
-            await _walk_public_folder(client, folder_id, depth=0, files=files, skipped=public_skipped, seen=set())
-            skipped.extend(public_skipped)
         if not files and api_error:
+            if api_error.code == "DRIVE_API_DISABLED":
+                raise AppError(
+                    "DRIVE_EMPTY",
+                    "That folder is shared, but Google did not list its files. Open the link in a browser, or download the files and drop them here.",
+                    400,
+                )
             raise api_error
     return files, skipped
 
@@ -145,7 +157,7 @@ async def download_drive_file(
     export = GOOGLE_EXPORT.get(item.mime_type)
     filename = _filename_for(item, export[1] if export else None)
     timeout = httpx.Timeout(60.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": "DocVault/1.0"}) as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": CHROME_UA}) as client:
         if item.source == "public" or not (access_token or api_key):
             data = await _download_public_bytes(client, item.id)
             return data, filename
@@ -317,9 +329,20 @@ _ENTRY_RE = re.compile(
     r'id="entry-([a-zA-Z0-9_-]{10,128})"[^>]*>[\s\S]{0,1200}?class="flip-entry-title"[^>]*>([^<]+)',
     re.I,
 )
-_FILE_LINK_RE = re.compile(r"https://drive\.google\.com/file/d/([a-zA-Z0-9_-]{10,128})")
+_FILE_LINK_RE = re.compile(
+    r"https://drive\.google\.com/file/d/([a-zA-Z0-9_-]{25,})/",
+    re.I,
+)
+_DOCS_LINK_RE = re.compile(
+    r"https://docs\.google\.com/(document|spreadsheets|presentation)/d/([a-zA-Z0-9_-]{25,})/",
+    re.I,
+)
 _FOLDER_LINK_RE = re.compile(r"https://drive\.google\.com/drive/folders/([a-zA-Z0-9_-]{10,128})")
-_DATA_ID_RE = re.compile(r'data-id="([a-zA-Z0-9_-]{10,128})"')
+_DATA_ID_RE = re.compile(r'data-id="([a-zA-Z0-9_-]{25,})"')
+_HREF_FILE_RE = re.compile(
+    r'<a[^>]+href="https://drive\.google\.com/file/d/([a-zA-Z0-9_-]{25,})/[^"]*"[^>]*>([^<]*)',
+    re.I,
+)
 _CONFIRM_RE = re.compile(r"confirm=([0-9A-Za-z_-]+)")
 
 
@@ -330,23 +353,30 @@ def parse_public_folder_listing(html: str, folder_id: str) -> tuple[list[DriveFi
     seen_files: set[str] = set()
     seen_folders: set[str] = set()
     current = _drive_id(folder_id)
-    for match in _ENTRY_RE.finditer(html or ""):
-        file_id, name = match.group(1), (match.group(2) or "file").strip() or "file"
+    text = (html or "").replace("&amp;", "&")
+
+    def add_file(file_id: str, name: str, mime: str = "") -> None:
         if file_id == current or file_id in seen_files:
-            continue
+            return
         seen_files.add(file_id)
-        files.append(DriveFile(file_id, name, "", source="public"))
-    for file_id in _FILE_LINK_RE.findall(html or ""):
-        if file_id == current or file_id in seen_files:
-            continue
-        seen_files.add(file_id)
-        files.append(DriveFile(file_id, "file", "", source="public"))
-    for file_id in _DATA_ID_RE.findall(html or ""):
-        if file_id == current or file_id in seen_files:
-            continue
-        seen_files.add(file_id)
-        files.append(DriveFile(file_id, "file", "", source="public"))
-    for nested in _FOLDER_LINK_RE.findall(html or ""):
+        files.append(DriveFile(file_id, (name or "file").strip() or "file", mime, source="public"))
+
+    for match in _HREF_FILE_RE.finditer(text):
+        add_file(match.group(1), match.group(2))
+    for match in _ENTRY_RE.finditer(text):
+        add_file(match.group(1), match.group(2))
+    for file_id in _FILE_LINK_RE.findall(text):
+        add_file(file_id, "file")
+    for kind, file_id in _DOCS_LINK_RE.findall(text):
+        mime = {
+            "document": "application/vnd.google-apps.document",
+            "spreadsheets": "application/vnd.google-apps.spreadsheet",
+            "presentation": "application/vnd.google-apps.presentation",
+        }.get(kind.lower(), "")
+        add_file(file_id, "file", mime)
+    for file_id in _DATA_ID_RE.findall(text):
+        add_file(file_id, "file")
+    for nested in _FOLDER_LINK_RE.findall(text):
         if nested == current or nested in seen_folders:
             continue
         seen_folders.add(nested)
@@ -373,6 +403,12 @@ async def _walk_public_folder(
     url = f"https://drive.google.com/embeddedfolderview?id={folder_id}"
     try:
         response = await client.get(url)
+        if response.status_code >= 400 or (
+            "file/d/" not in (response.text or "") and "flip-entry" not in (response.text or "")
+        ):
+            sharing = await client.get(f"https://drive.google.com/drive/folders/{folder_id}?usp=sharing")
+            if sharing.status_code < 400:
+                response = sharing
     except httpx.HTTPError as exc:
         raise AppError("DRIVE_UNREACHABLE", "Could not reach Google Drive", 502) from exc
     if response.status_code >= 400:
