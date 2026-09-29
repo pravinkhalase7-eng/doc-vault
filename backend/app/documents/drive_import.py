@@ -84,11 +84,19 @@ def _drive_id(value: str) -> str:
 
 
 class DriveFile:
-    def __init__(self, file_id: str, name: str, mime_type: str, size: int | None = None) -> None:
+    def __init__(
+        self,
+        file_id: str,
+        name: str,
+        mime_type: str,
+        size: int | None = None,
+        source: str = "api",
+    ) -> None:
         self.id = file_id
         self.name = name
         self.mime_type = mime_type
         self.size = size
+        self.source = source
 
 
 async def collect_drive_files(
@@ -102,16 +110,28 @@ async def collect_drive_files(
     headers = _auth_headers(access_token)
     params_base = _auth_params(api_key)
     timeout = httpx.Timeout(30.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        await _walk_folder(
-            client,
-            folder_id,
-            depth=0,
-            files=files,
-            skipped=skipped,
-            headers=headers,
-            params_base=params_base,
-        )
+    api_error: AppError | None = None
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": "DocVault/1.0"}) as client:
+        if access_token or api_key:
+            try:
+                await _walk_folder(
+                    client,
+                    folder_id,
+                    depth=0,
+                    files=files,
+                    skipped=skipped,
+                    headers=headers,
+                    params_base=params_base,
+                )
+            except AppError as exc:
+                api_error = exc
+                files.clear()
+        if not files:
+            public_skipped: list[dict[str, str]] = []
+            await _walk_public_folder(client, folder_id, depth=0, files=files, skipped=public_skipped, seen=set())
+            skipped.extend(public_skipped)
+        if not files and api_error:
+            raise api_error
     return files, skipped
 
 
@@ -124,17 +144,25 @@ async def download_drive_file(
     """Return file bytes and a vault filename (with extension)."""
     export = GOOGLE_EXPORT.get(item.mime_type)
     filename = _filename_for(item, export[1] if export else None)
-    headers = _auth_headers(access_token)
-    params = _auth_params(api_key)
     timeout = httpx.Timeout(60.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        if export:
-            params = {**params, "mimeType": export[0], "supportsAllDrives": "true"}
-            url = f"{DRIVE_API}/files/{item.id}/export"
-        else:
-            params = {**params, "alt": "media", "supportsAllDrives": "true"}
-            url = f"{DRIVE_API}/files/{item.id}"
-        data = await _get_bytes(client, url, headers=headers, params=params)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": "DocVault/1.0"}) as client:
+        if item.source == "public" or not (access_token or api_key):
+            data = await _download_public_bytes(client, item.id)
+            return data, filename
+        headers = _auth_headers(access_token)
+        params = _auth_params(api_key)
+        try:
+            if export:
+                params = {**params, "mimeType": export[0], "supportsAllDrives": "true"}
+                url = f"{DRIVE_API}/files/{item.id}/export"
+            else:
+                params = {**params, "alt": "media", "supportsAllDrives": "true"}
+                url = f"{DRIVE_API}/files/{item.id}"
+            data = await _get_bytes(client, url, headers=headers, params=params)
+        except AppError as exc:
+            if exc.code not in {"DRIVE_API_DISABLED", "DRIVE_FORBIDDEN", "DRIVE_ERROR"}:
+                raise
+            data = await _download_public_bytes(client, item.id)
     return data, filename
 
 
@@ -285,6 +313,114 @@ async def _walk_folder(
             break
 
 
+_ENTRY_RE = re.compile(
+    r'id="entry-([a-zA-Z0-9_-]{10,128})"[^>]*>[\s\S]{0,1200}?class="flip-entry-title"[^>]*>([^<]+)',
+    re.I,
+)
+_FILE_LINK_RE = re.compile(r"https://drive\.google\.com/file/d/([a-zA-Z0-9_-]{10,128})")
+_FOLDER_LINK_RE = re.compile(r"https://drive\.google\.com/drive/folders/([a-zA-Z0-9_-]{10,128})")
+_DATA_ID_RE = re.compile(r'data-id="([a-zA-Z0-9_-]{10,128})"')
+_CONFIRM_RE = re.compile(r"confirm=([0-9A-Za-z_-]+)")
+
+
+def parse_public_folder_listing(html: str, folder_id: str) -> tuple[list[DriveFile], list[str]]:
+    """Parse Google's public embedded folder page into files and nested folder ids."""
+    files: list[DriveFile] = []
+    folders: list[str] = []
+    seen_files: set[str] = set()
+    seen_folders: set[str] = set()
+    current = _drive_id(folder_id)
+    for match in _ENTRY_RE.finditer(html or ""):
+        file_id, name = match.group(1), (match.group(2) or "file").strip() or "file"
+        if file_id == current or file_id in seen_files:
+            continue
+        seen_files.add(file_id)
+        files.append(DriveFile(file_id, name, "", source="public"))
+    for file_id in _FILE_LINK_RE.findall(html or ""):
+        if file_id == current or file_id in seen_files:
+            continue
+        seen_files.add(file_id)
+        files.append(DriveFile(file_id, "file", "", source="public"))
+    for file_id in _DATA_ID_RE.findall(html or ""):
+        if file_id == current or file_id in seen_files:
+            continue
+        seen_files.add(file_id)
+        files.append(DriveFile(file_id, "file", "", source="public"))
+    for nested in _FOLDER_LINK_RE.findall(html or ""):
+        if nested == current or nested in seen_folders:
+            continue
+        seen_folders.add(nested)
+        folders.append(nested)
+    return files, folders
+
+
+async def _walk_public_folder(
+    client: httpx.AsyncClient,
+    folder_id: str,
+    *,
+    depth: int,
+    files: list[DriveFile],
+    skipped: list[dict[str, str]],
+    seen: set[str],
+) -> None:
+    if depth > MAX_DEPTH:
+        skipped.append({"name": folder_id, "reason": "Folder is nested too deep"})
+        return
+    folder_id = _drive_id(folder_id)
+    if folder_id in seen:
+        return
+    seen.add(folder_id)
+    url = f"https://drive.google.com/embeddedfolderview?id={folder_id}"
+    try:
+        response = await client.get(url)
+    except httpx.HTTPError as exc:
+        raise AppError("DRIVE_UNREACHABLE", "Could not reach Google Drive", 502) from exc
+    if response.status_code >= 400:
+        skipped.append({"name": folder_id, "reason": "That shared folder is not public"})
+        return
+    found, nested = parse_public_folder_listing(response.text, folder_id)
+    if not found and not nested:
+        return
+    for item in found:
+        reason = skip_reason(item)
+        if reason:
+            skipped.append({"name": item.name, "reason": reason})
+            continue
+        if len(files) >= MAX_FILES:
+            skipped.append({"name": item.name, "reason": f"Import stops after {MAX_FILES} files"})
+            continue
+        files.append(item)
+    for nested_id in nested:
+        await _walk_public_folder(
+            client,
+            nested_id,
+            depth=depth + 1,
+            files=files,
+            skipped=skipped,
+            seen=seen,
+        )
+
+
+async def _download_public_bytes(client: httpx.AsyncClient, file_id: str) -> bytes:
+    file_id = _drive_id(file_id)
+    url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
+    data = await _get_bytes(client, url, headers={}, params={})
+    if data.lstrip()[:15].lower().startswith(b"<!doctype html") or data.lstrip()[:6].lower().startswith(b"<html"):
+        text = data.decode("utf-8", "replace")
+        match = _CONFIRM_RE.search(text)
+        if not match:
+            raise AppError("DRIVE_FORBIDDEN", "Google Drive asked for extra confirmation on that file", 403)
+        data = await _get_bytes(
+            client,
+            f"https://drive.google.com/uc?export=download&id={file_id}&confirm={match.group(1)}",
+            headers={},
+            params={},
+        )
+    if data.lstrip()[:15].lower().startswith(b"<!doctype html") or data.lstrip()[:6].lower().startswith(b"<html"):
+        raise AppError("DRIVE_FORBIDDEN", "That Drive file is not shared for download", 403)
+    return data
+
+
 async def _get_json(
     client: httpx.AsyncClient,
     url: str,
@@ -297,6 +433,12 @@ async def _get_json(
     except httpx.HTTPError as exc:
         raise AppError("DRIVE_UNREACHABLE", "Could not reach Google Drive", 502) from exc
     if response.status_code in {401, 403}:
+        if _drive_api_disabled(response):
+            raise AppError(
+                "DRIVE_API_DISABLED",
+                "Enable the Google Drive API on the Google Cloud project used for sign-in.",
+                403,
+            )
         raise AppError(
             "DRIVE_FORBIDDEN",
             _drive_http_message(response, "Google Drive did not allow this folder. Open the link, make sure it is shared, then allow Drive access."),
@@ -357,6 +499,10 @@ def _int_or_none(value: object) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _drive_api_disabled(response: httpx.Response) -> bool:
+    return "Drive API" in _drive_http_message(response, "") or "accessNotConfigured" in (response.text or "")
 
 
 def _drive_http_message(response: httpx.Response, fallback: str) -> str:

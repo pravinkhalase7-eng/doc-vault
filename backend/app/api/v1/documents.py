@@ -86,12 +86,6 @@ async def import_drive(
     folder_id = parse_drive_folder_id(body.url)
     access_token = (body.access_token or "").strip() or None
     api_key = (cfg.google_api_key or "").strip() or None
-    if not access_token and not api_key:
-        raise AppError(
-            "DRIVE_AUTH_REQUIRED",
-            "Allow Google Drive access once, or download the folder and upload the files here.",
-            400,
-        )
     files, skipped = await collect_drive_files(folder_id, access_token=access_token, api_key=api_key)
     if not files:
         raise AppError(
